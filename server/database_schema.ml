@@ -11,7 +11,7 @@ module User = struct
     ; date_joined : Date.t
     ; last_login : Time_ns.t option
     }
-  [@@deriving fields]
+  [@@deriving fields, compare]
 
   let table = "users"
   let columns = Fields.names
@@ -52,7 +52,7 @@ module Image = struct
     ; filename : string
     ; date : Date.t
     }
-  [@@deriving fields]
+  [@@deriving fields, compare]
 
   let url t ~media_url = media_url ^/ Date.to_string t.date ^/ t.filename
   let table = "image"
@@ -87,7 +87,7 @@ module Tag = struct
     ; name : string
     ; slug : string
     }
-  [@@deriving fields]
+  [@@deriving fields, compare]
 
   let table = "tag"
   let columns = Fields.names
@@ -127,7 +127,7 @@ module Post = struct
     ; special_post : bool (* pinned to the about/main pages *)
     ; hidden : bool (* soft delete *)
     }
-  [@@deriving fields]
+  [@@deriving fields, compare]
 
   let table = "post"
 
@@ -194,7 +194,7 @@ module Publication = struct
     ; link : string option
     ; hidden : bool
     }
-  [@@deriving fields]
+  [@@deriving fields, compare]
 
   let table = "publication"
   let columns = Fields.names
@@ -236,7 +236,7 @@ module News = struct
     ; content : string
     ; date : Date.t
     }
-  [@@deriving fields]
+  [@@deriving fields, compare]
 
   let table = "news"
   let columns = Fields.names
@@ -269,21 +269,22 @@ module Post_tag = struct
     { post_id : int
     ; tag_id : int
     }
+  [@@deriving compare]
 
   let table = "post_tags"
 
   (* Needs secondary index based on [tag_id] *)
   let create_sql =
-    [%string
-      {sql|
+    [ [%string
+        {sql|
     CREATE TABLE IF NOT EXISTS %{table} (
       post_id INT NOT NULL REFERENCES %{Post.table} (id),
       tag_id INT NOT NULL REFERENCES %{Tag.table} (id),
       PRIMARY KEY (post_id, tag_id)
-    );
-    CREATE INDEX IF NOT EXISTS %{table}_tag_id_idx
-    ON %{table} (tag_id)
+    )
     |sql}]
+    ; [%string "CREATE INDEX IF NOT EXISTS %{table}_tag_id_idx ON %{table} (tag_id)"]
+    ]
   ;;
 end
 
@@ -294,6 +295,6 @@ let create_sql =
   ; Post.create_sql
   ; Publication.create_sql
   ; News.create_sql
-  ; Post_tag.create_sql
   ]
+  @ Post_tag.create_sql
 ;;

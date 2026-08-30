@@ -14,6 +14,10 @@ type t =
       ; news : Database_schema.News.t list ref
       }
 
+let is_unique rows ~field ~value =
+  not (List.exists rows ~f:(fun row -> String.equal (field row) value))
+;;
+
 let next_id items ~id =
   match items with
   | [] -> 1
@@ -225,20 +229,26 @@ module Post = struct
   let create t ~title ~slug ~content_en ~content_ko ~author_id ~special_post =
     match t with
     | Mock { posts; _ } ->
-      let post : Database_schema.Post.t =
-        { id = next_id !posts ~id:(fun post -> post.id)
-        ; title
-        ; slug
-        ; content_en
-        ; content_ko
-        ; author_id
-        ; created_at = Time_ns.now ()
-        ; special_post
-        ; hidden = false
-        }
-      in
-      posts := post :: !posts;
-      Deferred.Or_error.return post
+      (match is_unique !posts ~field:(fun post -> post.slug) ~value:slug with
+       | false ->
+         Deferred.return
+           (Or_error.error_s
+              [%message "duplicate key value violates unique constraint" (slug : string)])
+       | true ->
+         let post : Database_schema.Post.t =
+           { id = next_id !posts ~id:(fun post -> post.id)
+           ; title
+           ; slug
+           ; content_en
+           ; content_ko
+           ; author_id
+           ; created_at = Time_ns.now ()
+           ; special_post
+           ; hidden = false
+           }
+         in
+         posts := post :: !posts;
+         Deferred.Or_error.return post)
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
         let module Value = Pgx_async.Value in
@@ -290,17 +300,29 @@ module User = struct
   let create t ~username ~email ~password_hash ~date_joined =
     match t with
     | Mock { users; _ } ->
-      let user : Database_schema.User.t =
-        { id = next_id !users ~id:(fun (user : Database_schema.User.t) -> user.id)
-        ; username
-        ; email
-        ; password_hash
-        ; date_joined
-        ; last_login = None
-        }
-      in
-      users := user :: !users;
-      Deferred.Or_error.return user
+      (match
+         is_unique !users ~field:(fun user -> user.username) ~value:username
+         && is_unique !users ~field:(fun user -> user.email) ~value:email
+       with
+       | false ->
+         Deferred.return
+           (Or_error.error_s
+              [%message
+                "duplicate key value violates unique constraint"
+                  (username : string)
+                  (email : string)])
+       | true ->
+         let user : Database_schema.User.t =
+           { id = next_id !users ~id:(fun (user : Database_schema.User.t) -> user.id)
+           ; username
+           ; email
+           ; password_hash
+           ; date_joined
+           ; last_login = None
+           }
+         in
+         users := user :: !users;
+         Deferred.Or_error.return user)
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
         let module Value = Pgx_async.Value in
@@ -510,6 +532,7 @@ module Post_tag = struct
   ;;
 
   let set_tags t ~post_id ~tag_ids =
+    let tag_ids = List.dedup_and_sort tag_ids ~compare:Int.compare in
     match t with
     | Mock { post_tags; _ } ->
       let kept =
@@ -601,6 +624,7 @@ module Publication = struct
     | Mock { publication; _ } ->
       List.filter !publication ~f:(fun publication ->
         (not publication.hidden) || include_hidden)
+      |> List.sort ~compare:(fun a b -> Int.compare a.id b.id)
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
@@ -614,7 +638,8 @@ module Publication = struct
           Pgx_async.execute
             connection
             [%string
-              "SELECT %{columns} FROM %{Database_schema.Publication.table} %{where}"]
+              "SELECT %{columns} FROM %{Database_schema.Publication.table} %{where} \
+               ORDER BY id"]
         in
         List.map rows ~f:Database_schema.Publication.of_row)
   ;;
@@ -670,7 +695,7 @@ module News = struct
 end
 
 module For_testing = struct
-  let create
+  let create_in_memory
         ?(posts = [])
         ?(users = [])
         ?(images = [])
@@ -689,5 +714,14 @@ module For_testing = struct
       ; publication = ref publication
       ; news = ref news
       }
+  ;;
+
+  let with_test_connection ~f =
+    Pgx_async.with_conn ~database:"blogdb_test" (fun connection ->
+      (* Reset the database every time *)
+      let%bind () = Pgx_async.execute_unit connection "DROP SCHEMA public CASCADE" in
+      let%bind () = Pgx_async.execute_unit connection "CREATE SCHEMA public" in
+      let t = Real { connection } in
+      f t)
   ;;
 end

@@ -1,6 +1,12 @@
 (library
- (name markdown_renderer_test)
+ (name blog_test)
  (inline_tests)
- (libraries core blog_common)
+ (libraries
+  core
+  async
+  async.async_quickcheck
+  blog_common
+  blog_server
+  pgx_async)
  (preprocess
   (pps ppx_jane)))

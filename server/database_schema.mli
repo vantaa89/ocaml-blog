@@ -11,6 +11,7 @@ module User : sig
     ; date_joined : Date.t
     ; last_login : Time_ns.t option
     }
+  [@@deriving compare]
 
   val table : string
   val create_sql : string
@@ -24,6 +25,7 @@ module Image : sig
     ; filename : string
     ; date : Date.t
     }
+  [@@deriving compare]
 
   val table : string
   val create_sql : string
@@ -38,6 +40,7 @@ module Tag : sig
     ; name : string
     ; slug : string
     }
+  [@@deriving compare]
 
   val table : string
   val create_sql : string
@@ -57,6 +60,7 @@ module Post : sig
     ; special_post : bool
     ; hidden : bool
     }
+  [@@deriving compare]
 
   val table : string
   val create_sql : string
@@ -75,6 +79,7 @@ module Publication : sig
     ; link : string option
     ; hidden : bool
     }
+  [@@deriving compare]
 
   val table : string
   val create_sql : string
@@ -88,6 +93,7 @@ module News : sig
     ; content : string
     ; date : Date.t
     }
+  [@@deriving compare]
 
   val table : string
   val create_sql : string
@@ -100,9 +106,10 @@ module Post_tag : sig
     { post_id : int
     ; tag_id : int
     }
+  [@@deriving compare]
 
   val table : string
-  val create_sql : string
+  val create_sql : string list
 end
 
 val create_sql : string list

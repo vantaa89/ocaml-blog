@@ -116,7 +116,7 @@ module News : sig
 end
 
 module For_testing : sig
-  val create
+  val create_in_memory
     :  ?posts:Database_schema.Post.t list
     -> ?users:Database_schema.User.t list
     -> ?images:Database_schema.Image.t list
@@ -126,4 +126,6 @@ module For_testing : sig
     -> ?news:Database_schema.News.t list
     -> unit
     -> t
+
+  val with_test_connection : f:(t -> 'a Deferred.t) -> 'a Deferred.t
 end
