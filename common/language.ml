@@ -4,7 +4,7 @@ module T = struct
   type t =
     | English
     | Korean
-  [@@deriving bin_io, hash, compare, sexp_of]
+  [@@deriving bin_io, hash, compare, equal, sexp]
 end
 
 include Comparable.Make_plain (T)

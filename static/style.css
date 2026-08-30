@@ -955,3 +955,44 @@ mark {
         display: none;
     }
 }
+
+/* Language toggle on post detail pages (was an inline <style> block in the Django
+   post_detail.html template). */
+.language-toggle-container {
+    display: flex;
+    align-items: center;
+}
+
+.language-toggle {
+    display: flex;
+    background: #f1f3f4;
+    border-radius: 20px;
+    padding: 2px;
+    width: 80px;
+    min-width: 80px;
+}
+
+.language-btn {
+    background: transparent;
+    border: none;
+    padding: 6px 12px;
+    margin: 0;
+    border-radius: 18px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: #5f6368;
+    flex: 1;
+    width: 36px;
+    min-width: 36px;
+}
+
+.language-btn:hover {
+    background: rgba(255,255,255,0.5);
+}
+
+.language-btn.active {
+    background: white;
+    color: #20639B;
+}

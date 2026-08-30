@@ -75,7 +75,6 @@ let posts_to_summaries db ?query (posts : Database_schema.Post.t list) =
      ; created_at = post.created_at
      ; tags = List.map tags ~f:tag_to_rpc
      ; languages = Map.keys (Database_schema.Post.content_by_language post)
-     ; hidden = post.hidden
      }
      : Rpcs.Post_summary.t))
 ;;

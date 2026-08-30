@@ -1,12 +1,20 @@
 open! Core
 open! Import
 
+(** [Time_ns.Stable.Alternate_sexp.V1] does not export [equal], which Bonsai's [Model]
+    signature requires of every type stored in client-side state. *)
+module Time_ns_alternate_sexp = struct
+  include Time_ns.Stable.Alternate_sexp.V1
+
+  let equal = Time_ns.equal
+end
+
 module Tag = struct
   type t =
     { name : string
     ; slug : string
     }
-  [@@deriving bin_io, sexp_of]
+  [@@deriving bin_io, sexp, equal]
 end
 
 module Tag_with_count = struct
@@ -14,7 +22,7 @@ module Tag_with_count = struct
     { tag : Tag.t
     ; post_count : int
     }
-  [@@deriving bin_io, sexp_of]
+  [@@deriving bin_io, sexp, equal]
 end
 
 module Post = struct
@@ -22,12 +30,12 @@ module Post = struct
     { title : string
     ; slug : string
     ; content : string Map.M(Language).t
-    ; created_at : Time_ns.Stable.Alternate_sexp.V1.t
+    ; created_at : Time_ns_alternate_sexp.t
     ; tags : Tag.t list
     ; special_post : bool
     ; hidden : bool
     }
-  [@@deriving bin_io, sexp_of]
+  [@@deriving bin_io, sexp, equal]
 end
 
 module Post_summary = struct
@@ -37,12 +45,11 @@ module Post_summary = struct
     { title : string
     ; slug : string
     ; excerpt : string
-    ; created_at : Time_ns.Stable.Alternate_sexp.V1.t
+    ; created_at : Time_ns_alternate_sexp.t
     ; tags : Tag.t list
     ; languages : Language.t list
-    ; hidden : bool
     }
-  [@@deriving bin_io, sexp_of]
+  [@@deriving bin_io, sexp, equal]
 end
 
 module Publication = struct
@@ -53,7 +60,7 @@ module Publication = struct
     ; journal : string
     ; link : string option
     }
-  [@@deriving bin_io, sexp_of]
+  [@@deriving bin_io, sexp, equal]
 end
 
 module News = struct
@@ -61,7 +68,7 @@ module News = struct
     { content : string
     ; date : Date.t
     }
-  [@@deriving bin_io, sexp_of]
+  [@@deriving bin_io, sexp, equal]
 end
 
 module Get_main_page = struct
@@ -72,7 +79,7 @@ module Get_main_page = struct
       ; publications : Publication.t list
       ; news : News.t list
       }
-    [@@deriving bin_io, sexp_of]
+    [@@deriving bin_io, sexp, equal]
   end
 
   let rpc =
@@ -85,18 +92,26 @@ module Get_main_page = struct
 end
 
 module Get_about_page = struct
+  module Response = struct
+    type t = Post.t option [@@deriving bin_io, sexp, equal]
+  end
+
   let rpc =
     Rpc.Rpc.create
       ~name:"get-about-page"
       ~version:0
       ~bin_query:Unit.bin_t
-      ~bin_response:[%bin_type_class: Post.t option]
+      ~bin_response:Response.bin_t
   ;;
 end
 
 module Get_post = struct
   module Query = struct
-    type t = { slug : string } [@@deriving bin_io]
+    type t = { slug : string } [@@deriving bin_io, sexp, equal]
+  end
+
+  module Response = struct
+    type t = Post.t option [@@deriving bin_io, sexp, equal]
   end
 
   let rpc =
@@ -104,7 +119,7 @@ module Get_post = struct
       ~name:"get-post"
       ~version:0
       ~bin_query:Query.bin_t
-      ~bin_response:[%bin_type_class: Post.t option]
+      ~bin_response:Response.bin_t
   ;;
 end
 
@@ -115,7 +130,11 @@ module Get_post_list = struct
       ; limit : int option
       ; offset : int option
       }
-    [@@deriving bin_io]
+    [@@deriving bin_io, sexp, equal]
+  end
+
+  module Response = struct
+    type t = Post_summary.t list [@@deriving bin_io, sexp, equal]
   end
 
   let rpc =
@@ -123,23 +142,31 @@ module Get_post_list = struct
       ~name:"get-post-list"
       ~version:0
       ~bin_query:Query.bin_t
-      ~bin_response:[%bin_type_class: Post_summary.t list]
+      ~bin_response:Response.bin_t
   ;;
 end
 
 module Get_tags = struct
+  module Response = struct
+    type t = Tag_with_count.t list [@@deriving bin_io, sexp, equal]
+  end
+
   let rpc =
     Rpc.Rpc.create
       ~name:"get-tags"
       ~version:0
       ~bin_query:Unit.bin_t
-      ~bin_response:[%bin_type_class: Tag_with_count.t list]
+      ~bin_response:Response.bin_t
   ;;
 end
 
 module Search_posts = struct
   module Query = struct
-    type t = { query : string } [@@deriving bin_io]
+    type t = { query : string } [@@deriving bin_io, sexp, equal]
+  end
+
+  module Response = struct
+    type t = Post_summary.t list [@@deriving bin_io, sexp, equal]
   end
 
   let rpc =
@@ -147,13 +174,17 @@ module Search_posts = struct
       ~name:"search-posts"
       ~version:0
       ~bin_query:Query.bin_t
-      ~bin_response:[%bin_type_class: Post_summary.t list]
+      ~bin_response:Response.bin_t
   ;;
 end
 
 module Render_markdown = struct
   module Query = struct
-    type t = { markdown : string } [@@deriving bin_io]
+    type t = { markdown : string } [@@deriving bin_io, sexp, equal]
+  end
+
+  module Response = struct
+    type t = string [@@deriving bin_io, sexp, equal]
   end
 
   let rpc =
@@ -161,7 +192,7 @@ module Render_markdown = struct
       ~name:"render-markdown"
       ~version:0
       ~bin_query:Query.bin_t
-      ~bin_response:[%bin_type_class: string]
+      ~bin_response:Response.bin_t
   ;;
 end
 

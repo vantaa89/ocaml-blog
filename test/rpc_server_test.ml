@@ -60,7 +60,7 @@ let%expect_test "the post list excludes special posts" =
     {|
     (((title "Hello world") (slug hello-world) (excerpt "Content of Hello world")
       (created_at "2026-08-02 15:00:00Z") (tags (((name OCaml) (slug ocaml))))
-      (languages (English)) (hidden false))) |}];
+      (languages (English)))) |}];
   return ()
 ;;
 
@@ -102,7 +102,7 @@ let%expect_test "search centers the excerpt on the match and ignores short queri
     {|
     (((title "Hello world") (slug hello-world) (excerpt "Content of Hello world")
       (created_at "2026-08-02 15:00:00Z") (tags (((name OCaml) (slug ocaml))))
-      (languages (English)) (hidden false))) |}];
+      (languages (English)))) |}];
   return ()
 ;;
 
@@ -171,17 +171,13 @@ let%expect_test
         (hidden false))))
      (recent_posts
       (((title Seventh) (slug seventh) (excerpt "Content of Seventh")
-        (created_at "2026-08-07 15:00:00Z") (tags ()) (languages (English))
-        (hidden false))
+        (created_at "2026-08-07 15:00:00Z") (tags ()) (languages (English)))
        ((title Sixth) (slug sixth) (excerpt "Content of Sixth")
-        (created_at "2026-08-06 15:00:00Z") (tags ()) (languages (English))
-        (hidden false))
+        (created_at "2026-08-06 15:00:00Z") (tags ()) (languages (English)))
        ((title Fifth) (slug fifth) (excerpt "Content of Fifth")
-        (created_at "2026-08-05 15:00:00Z") (tags ()) (languages (English))
-        (hidden false))
+        (created_at "2026-08-05 15:00:00Z") (tags ()) (languages (English)))
        ((title Fourth) (slug fourth) (excerpt "Content of Fourth")
-        (created_at "2026-08-04 15:00:00Z") (tags ()) (languages (English))
-        (hidden false))))
+        (created_at "2026-08-04 15:00:00Z") (tags ()) (languages (English)))))
      (publications
       (((title "A paper") (image_url /media/2024-01-15/paper.png)
         (authors "Your Name") (journal "A journal")

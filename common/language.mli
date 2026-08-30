@@ -3,7 +3,7 @@ open! Core
 type t =
   | English
   | Korean
-[@@deriving bin_io, sexp_of]
+[@@deriving bin_io, sexp]
 
 include Comparable.S_plain with type t := t
 include Hashable.S_plain with type t := t

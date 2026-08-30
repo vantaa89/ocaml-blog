@@ -1,0 +1,37 @@
+open! Core
+open! Import
+
+val zone : Time_float.Zone.t
+val format_time : Time_ns.t -> string
+
+(** An estimated reading time, ["N min read"]. *)
+val read_time : string -> string
+
+(** [Rpcs.Post.content] maps each language to its markdown; English is the default. *)
+val primary_content : string Map.M(Language).t -> string option
+
+(** Number of posts shown per page, matching Django's [paginate_by]. *)
+val page_size : int
+
+(** The slice of [items] belonging to the given one-based page. *)
+val paginate : 'a list -> page:int -> 'a list
+
+(** An [<a>] that navigates within the app instead of reloading the page. It still carries
+    a real [href], so copying the link or opening it in a new tab behaves normally. *)
+val link : ?attrs:Vdom.Attr.t list -> Route.t -> Vdom.Node.t list -> Vdom.Node.t
+
+val tag_node : Rpcs.Tag.t -> Vdom.Node.t
+
+(** The [post-card] block shared by [index.html] and [posts.html]. *)
+val post_card : Rpcs.Post_summary.t -> Vdom.Node.t
+
+val not_found_node : Vdom.Node.t
+
+(** Renders [f response] once the rpc has succeeded, and a placeholder until then. *)
+val of_poll
+  :  ('query, 'response) Rpc_effect.Poll_result.t
+  -> f:('response -> Vdom.Node.t)
+  -> Vdom.Node.t
+
+val paginator : route:Route.t -> page:int -> num_pages:int -> Vdom.Node.t
+val rerender_math_on_change : string Value.t -> unit Computation.t

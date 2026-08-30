@@ -1,0 +1,9 @@
+; The js_of_ocaml bundle is promoted into the source tree because the web server
+; serves [static/] from the working directory rather than from [_build].
+
+(rule
+ (mode promote)
+ (targets main.js)
+ (deps ../client/main.bc.js)
+ (action
+  (copy %{deps} main.js)))

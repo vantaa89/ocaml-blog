@@ -1,0 +1,17 @@
+(executable
+ (name main)
+ (modes js)
+ (libraries
+  core
+  async_js
+  async_kernel
+  async_rpc_kernel
+  bonsai
+  bonsai.web
+  bonsai.web_ui_url_var
+  js_of_ocaml
+  blog_common
+  uri
+  virtual_dom)
+ (preprocess
+  (pps ppx_jane ppx_string bonsai.ppx_bonsai js_of_ocaml-ppx)))
