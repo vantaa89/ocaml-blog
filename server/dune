@@ -1,0 +1,5 @@
+(library
+ (name blog_server)
+ (libraries core async pgx_async cohttp-async blog_common ptime)
+ (preprocess
+  (pps ppx_jane ppx_string)))

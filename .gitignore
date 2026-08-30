@@ -1,0 +1,28 @@
+# Dune / OCaml build output
+_build/
+*.install
+*.merlin
+.merlin
+
+# OCaml artifacts
+*.cm[ioxat]
+*.cmx[as]
+*.cmti
+*.annot
+*.o
+*.a
+*.so
+*.byte
+*.native
+
+# opam local switch
+_opam/
+
+# Editor / OS
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Tooling state
+.omc/

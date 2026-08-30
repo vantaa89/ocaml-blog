@@ -1,0 +1,5 @@
+(library
+ (name blog_common)
+ (libraries core cmarkit re)
+ (preprocess
+  (pps ppx_jane)))

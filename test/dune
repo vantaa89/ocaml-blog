@@ -1,0 +1,6 @@
+(library
+ (name markdown_renderer_test)
+ (inline_tests)
+ (libraries core blog_common)
+ (preprocess
+  (pps ppx_jane)))
