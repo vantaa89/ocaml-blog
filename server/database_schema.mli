@@ -14,7 +14,7 @@ module User : sig
 
   val table : string
   val create_sql : string
-  val columns : string
+  val columns : string list
   val of_row : Pgx.Value.t list -> t
 end
 
@@ -27,7 +27,7 @@ module Image : sig
 
   val table : string
   val create_sql : string
-  val columns : string
+  val columns : string list
   val of_row : Pgx.Value.t list -> t
   val url : t -> media_url:string -> string
 end
@@ -41,7 +41,7 @@ module Tag : sig
 
   val table : string
   val create_sql : string
-  val columns : string
+  val columns : string list
   val of_row : Pgx.Value.t list -> t
 end
 
@@ -60,7 +60,7 @@ module Post : sig
 
   val table : string
   val create_sql : string
-  val columns : string
+  val columns : string list
   val available_languages : t -> Language.t list
   val of_row : Pgx.Value.t list -> t
 end
@@ -78,7 +78,7 @@ module Publication : sig
 
   val table : string
   val create_sql : string
-  val columns : string
+  val columns : string list
   val of_row : Pgx.Value.t list -> t
 end
 
@@ -91,12 +91,15 @@ module News : sig
 
   val table : string
   val create_sql : string
-  val columns : string
+  val columns : string list
   val of_row : Pgx.Value.t list -> t
 end
 
 module Post_tag : sig
-  type t
+  type t =
+    { post_id : int
+    ; tag_id : int
+    }
 
   val table : string
   val create_sql : string

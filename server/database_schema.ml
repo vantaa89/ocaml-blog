@@ -14,7 +14,7 @@ module User = struct
   [@@deriving fields]
 
   let table = "users"
-  let columns = String.concat ~sep:", " Fields.names
+  let columns = Fields.names
 
   let of_row row : t =
     let module Value = Pgx_async.Value in
@@ -32,8 +32,9 @@ module User = struct
   ;;
 
   let create_sql =
-    {sql|
-    CREATE TABLE IF NOT EXISTS users (
+    [%string
+      {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,
       email TEXT NOT NULL UNIQUE,
@@ -41,7 +42,7 @@ module User = struct
       date_joined DATE NOT NULL,
       last_login TIMESTAMPTZ
     )
-    |sql}
+    |sql}]
   ;;
 end
 
@@ -54,8 +55,8 @@ module Image = struct
   [@@deriving fields]
 
   let url t ~media_url = media_url ^/ Date.to_string t.date ^/ t.filename
-  let table = "blogapp_image"
-  let columns = String.concat ~sep:", " Fields.names
+  let table = "image"
+  let columns = Fields.names
 
   let of_row row : t =
     let module Value = Pgx_async.Value in
@@ -69,13 +70,14 @@ module Image = struct
   ;;
 
   let create_sql =
-    {sql|
-    CREATE TABLE IF NOT EXISTS blogapp_image (
+    [%string
+      {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       filename TEXT NOT NULL,
       date DATE NOT NULL
     )
-    |sql}
+    |sql}]
   ;;
 end
 
@@ -88,7 +90,7 @@ module Tag = struct
   [@@deriving fields]
 
   let table = "tag"
-  let columns = String.concat ~sep:", " Fields.names
+  let columns = Fields.names
 
   let of_row row : t =
     let module Value = Pgx_async.Value in
@@ -102,13 +104,14 @@ module Tag = struct
   ;;
 
   let create_sql =
-    {sql|
-    CREATE TABLE IF NOT EXISTS tag (
+    [%string
+      {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       slug TEXT NOT NULL UNIQUE
     )
-    |sql}
+    |sql}]
   ;;
 end
 
@@ -126,7 +129,7 @@ module Post = struct
     }
   [@@deriving fields]
 
-  let table = "blogapp_post"
+  let table = "post"
 
   let available_languages t : Language.t list =
     List.filter_opt
@@ -135,7 +138,7 @@ module Post = struct
       ]
   ;;
 
-  let columns = String.concat ~sep:", " Fields.names
+  let columns = Fields.names
 
   let of_row row : t =
     let module Value = Pgx_async.Value in
@@ -164,19 +167,20 @@ module Post = struct
   ;;
 
   let create_sql =
-    {sql|
-    CREATE TABLE IF NOT EXISTS blogapp_post (
+    [%string
+      {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
       slug TEXT NOT NULL UNIQUE,
       content_en TEXT,
       content_ko TEXT,
-      author_id INT NOT NULL REFERENCES users (id),
+      author_id INT NOT NULL REFERENCES %{User.table} (id),
       created_at TIMESTAMPTZ NOT NULL,
       special_post BOOLEAN NOT NULL,
       hidden BOOLEAN NOT NULL
     )
-    |sql}
+    |sql}]
   ;;
 end
 
@@ -193,7 +197,7 @@ module Publication = struct
   [@@deriving fields]
 
   let table = "publication"
-  let columns = String.concat ~sep:", " Fields.names
+  let columns = Fields.names
 
   let of_row row : t =
     let module Value = Pgx_async.Value in
@@ -211,17 +215,18 @@ module Publication = struct
   ;;
 
   let create_sql =
-    {sql|
-    CREATE TABLE IF NOT EXISTS publication (
+    [%string
+      {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
-      image_id INT NOT NULL REFERENCES blogapp_image (id),
+      image_id INT NOT NULL REFERENCES %{Image.table} (id),
       authors TEXT NOT NULL,
       journal TEXT NOT NULL,
       link TEXT,
       hidden BOOLEAN NOT NULL
     )
-    |sql}
+    |sql}]
   ;;
 end
 
@@ -234,7 +239,7 @@ module News = struct
   [@@deriving fields]
 
   let table = "news"
-  let columns = String.concat ~sep:", " Fields.names
+  let columns = Fields.names
 
   let of_row row : t =
     let module Value = Pgx_async.Value in
@@ -248,13 +253,14 @@ module News = struct
   ;;
 
   let create_sql =
-    {sql|
-    CREATE TABLE IF NOT EXISTS news (
+    [%string
+      {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       content TEXT NOT NULL,
       date DATE NOT NULL
     )
-    |sql}
+    |sql}]
   ;;
 end
 
@@ -264,19 +270,20 @@ module Post_tag = struct
     ; tag_id : int
     }
 
-  let table = "blogapp_post_tags"
+  let table = "post_tags"
 
   (* Needs secondary index based on [tag_id] *)
   let create_sql =
-    {sql|
-    CREATE TABLE IF NOT EXISTS blogapp_post_tags (
-      post_id INT NOT NULL REFERENCES blogapp_post (id),
-      tag_id INT NOT NULL REFERENCES tag (id),
+    [%string
+      {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
+      post_id INT NOT NULL REFERENCES %{Post.table} (id),
+      tag_id INT NOT NULL REFERENCES %{Tag.table} (id),
       PRIMARY KEY (post_id, tag_id)
     );
-    CREATE INDEX IF NOT EXISTS blogapp_post_tags_tag_id_idx
-    ON blogapp_post_tags (tag_id)
-    |sql}
+    CREATE INDEX IF NOT EXISTS %{table}_tag_id_idx
+    ON %{table} (tag_id)
+    |sql}]
   ;;
 end
 
