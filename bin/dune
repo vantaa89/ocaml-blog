@@ -1,0 +1,5 @@
+(executable
+ (name main)
+ (libraries core core_unix.command_unix async blog_server)
+ (preprocess
+  (pps ppx_jane)))

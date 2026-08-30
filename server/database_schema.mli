@@ -65,7 +65,7 @@ module Post : sig
   val table : string
   val create_sql : string
   val columns : string list
-  val available_languages : t -> Language.t list
+  val content_by_language : t -> string Language.Map.t
   val of_row : Pgx.Value.t list -> t
 end
 

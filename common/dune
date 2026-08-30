@@ -1,5 +1,5 @@
 (library
  (name blog_common)
- (libraries core cmarkit re)
+ (libraries core cmarkit re async_rpc_kernel)
  (preprocess
   (pps ppx_jane)))

@@ -88,7 +88,8 @@ module Post = struct
     match t with
     | Mock { posts; _ } ->
       !posts
-      |> List.filter ~f:(fun post -> include_hidden || not post.hidden)
+      |> List.filter ~f:(fun post ->
+        (not post.special_post) && (include_hidden || not post.hidden))
       |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
       |> (fun posts -> List.drop posts offset)
       |> (fun posts ->
@@ -101,8 +102,8 @@ module Post = struct
         let module Value = Pgx_async.Value in
         let where =
           match include_hidden with
-          | true -> ""
-          | false -> "WHERE NOT hidden"
+          | true -> "WHERE NOT special_post"
+          | false -> "WHERE NOT special_post AND NOT hidden"
         in
         let limit_clause =
           match limit with
@@ -135,7 +136,9 @@ module Post = struct
          in
          !posts
          |> List.filter ~f:(fun post ->
-           Set.mem post_ids post.id && (include_hidden || not post.hidden))
+           Set.mem post_ids post.id
+           && (not post.special_post)
+           && (include_hidden || not post.hidden))
          |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
          |> (fun posts -> List.drop posts offset)
          |> (fun posts ->
@@ -148,8 +151,8 @@ module Post = struct
         let module Value = Pgx_async.Value in
         let where =
           match include_hidden with
-          | true -> ""
-          | false -> "AND NOT p.hidden"
+          | true -> "AND NOT p.special_post"
+          | false -> "AND NOT p.special_post AND NOT p.hidden"
         in
         let limit_clause =
           match limit with
@@ -408,6 +411,26 @@ module Image = struct
         | rows ->
           raise_s
             [%message "Unexpected result from Image insert" (rows : Value.t list list)])
+  ;;
+
+  let find_by_id t ~id =
+    match t with
+    | Mock { images; _ } ->
+      List.find !images ~f:(fun image -> image.id = id) |> Deferred.Or_error.return
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        let columns = String.concat ~sep:", " Database_schema.Image.columns in
+        let%map rows =
+          Pgx_async.execute
+            connection
+            ~params:[ Value.of_int id ]
+            [%string
+              "SELECT %{columns} FROM %{Database_schema.Image.table} WHERE id = $1"]
+        in
+        Utils.expect_at_most_one rows ~error_message:(fun _ ->
+          [%message "Expected at most one image for id" (id : int)])
+        |> Option.map ~f:Database_schema.Image.of_row)
   ;;
 end
 

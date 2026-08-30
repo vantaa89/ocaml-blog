@@ -1,5 +1,12 @@
 (library
  (name blog_server)
- (libraries core async pgx_async cohttp-async blog_common ptime)
+ (libraries
+  core
+  async
+  pgx_async
+  cohttp-async
+  async_rpc_websocket
+  blog_common
+  ptime)
  (preprocess
   (pps ppx_jane ppx_string)))

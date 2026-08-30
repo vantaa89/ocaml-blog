@@ -131,11 +131,11 @@ module Post = struct
 
   let table = "post"
 
-  let available_languages t : Language.t list =
-    List.filter_opt
-      [ Option.map t.content_en ~f:(fun (_ : string) -> Language.English)
-      ; Option.map t.content_ko ~f:(fun (_ : string) -> Language.Korean)
-      ]
+  let content_by_language t : string Language.Map.t =
+    [ Language.English, t.content_en; Korean, t.content_ko ]
+    |> List.filter_map ~f:(fun (language, content) ->
+      Option.map content ~f:(fun content -> language, content))
+    |> Language.Map.of_alist_exn
   ;;
 
   let columns = Fields.names

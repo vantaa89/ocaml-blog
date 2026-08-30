@@ -21,20 +21,22 @@ module Post : sig
   val find_by_slug : t -> slug:string -> Database_schema.Post.t option Deferred.Or_error.t
   val find_by_id : t -> id:int -> Database_schema.Post.t option Deferred.Or_error.t
 
+  (** Returns list of posts. Special posts are excluded *)
   val list
     :  t
-    -> ?include_hidden:bool
+    -> ?include_hidden:bool (* default: [false] *)
     -> ?limit:int
-    -> ?offset:int
+    -> ?offset:int (* default: [0] *)
     -> unit
     -> Database_schema.Post.t list Deferred.Or_error.t
 
+  (** Returns list of posts. Special posts are excluded *)
   val list_by_tag_slug
     :  t
     -> slug:string
     -> ?include_hidden:bool
     -> ?limit:int
-    -> ?offset:int
+    -> ?offset:int (* default: [0] *)
     -> unit
     -> Database_schema.Post.t list Deferred.Or_error.t
 
@@ -69,6 +71,8 @@ module Image : sig
     -> filename:string
     -> date:Date.t
     -> Database_schema.Image.t Deferred.Or_error.t
+
+  val find_by_id : t -> id:int -> Database_schema.Image.t option Deferred.Or_error.t
 end
 
 module Tag : sig
@@ -100,7 +104,7 @@ module Publication : sig
 
   val list
     :  t
-    -> ?include_hidden:bool
+    -> ?include_hidden:bool (* default: [false] *)
     -> unit
     -> Database_schema.Publication.t list Deferred.Or_error.t
 end

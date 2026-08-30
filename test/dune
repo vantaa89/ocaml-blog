@@ -5,8 +5,10 @@
   core
   async
   async.async_quickcheck
+  async_rpc_websocket
+  cohttp-async
   blog_common
   blog_server
   pgx_async)
  (preprocess
-  (pps ppx_jane)))
+  (pps ppx_jane ppx_string)))
