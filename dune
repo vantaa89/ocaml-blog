@@ -1,4 +1,6 @@
 (alias
  (name default)
  (deps
-  (alias_rec runtest)))
+  (alias_rec runtest)
+  ; [dune build] also rebuilds the client bundle
+  static/main.js))

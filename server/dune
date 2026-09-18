@@ -6,6 +6,7 @@
   pgx_async
   cohttp-async
   async_rpc_websocket
+  cohttp_async_websocket
   blog_common
   ptime)
  (preprocess

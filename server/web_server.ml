@@ -11,6 +11,8 @@ module Http_route = struct
     | Media of { path : string }
     | Static of { path : string }
     | Index
+    | Login
+    | Logout
     | Not_found
 
   let of_request ~(meth : Cohttp.Code.meth) ~path : t =
@@ -26,22 +28,35 @@ module Http_route = struct
           | false, true -> Static { path }
           | false, false -> Index
           | true, true -> Not_found (* impossible *)))
+    | `POST ->
+      (match segments with
+       | [ "users"; "login" ] -> Login
+       | [ "users"; "logout" ] -> Logout
+       | _ -> Not_found)
     | _ -> Not_found
   ;;
 end
 
-let respond_not_found () = Server.respond_string ~status:`Not_found "Not found"
+let with_same_origin_check request ~f =
+  match
+    Cohttp.Request.headers request |> Cohttp_async_websocket.Header.origin_and_host_match
+  with
+  | Ok () -> f ()
+  | Error error ->
+    Log.Global.info_s [%message "Rejected cross-origin request" (error : Error.t)];
+    Server.respond_string ~status:`Forbidden "Forbidden"
+;;
 
 let serve_file ~docroot ~path =
   (* [resolve_local_file] strips [..] segments, so a request cannot escape [docroot]. *)
   let file = Server.resolve_local_file ~docroot ~uri:(Uri.make ~path ()) in
   match%bind Sys.file_exists file with
   | `Yes -> Server.respond_with_file file
-  | `No | `Unknown -> respond_not_found ()
+  | `No | `Unknown -> Server.respond_string ~status:`Not_found "File not found"
 ;;
 
 let serve db (config : Config.t) =
-  let http_handler (config : Config.t) () ~body:_ _address request =
+  let http_handler (config : Config.t) () ~body _address request =
     let uri = Cohttp.Request.uri request in
     match
       Http_route.of_request ~meth:(Cohttp.Request.meth request) ~path:(Uri.path uri)
@@ -49,7 +64,12 @@ let serve db (config : Config.t) =
     | Media { path } -> serve_file ~docroot:config.media_dir ~path
     | Static { path } -> serve_file ~docroot:config.static_dir ~path
     | Index -> serve_file ~docroot:config.static_dir ~path:"index.html"
-    | Not_found -> respond_not_found ()
+    | Login ->
+      with_same_origin_check request ~f:(fun () ->
+        Auth.handle_login db config ~body request)
+    | Logout ->
+      with_same_origin_check request ~f:(fun () -> Auth.handle_logout db config request)
+    | Not_found -> Server.respond_string ~status:`Not_found "Not found"
   in
   Rpc_websocket.Rpc.serve
     ~where_to_listen:(Tcp.Where_to_listen.of_port config.port)
