@@ -3,10 +3,13 @@
  (libraries
   core
   async
+  async_rpc_websocket
+  argon2
   pgx_async
   cohttp-async
-  async_rpc_websocket
   cohttp_async_websocket
+  mirage-crypto-rng
+  mirage-crypto-rng.unix
   blog_common
   ptime)
  (preprocess
