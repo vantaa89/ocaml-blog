@@ -1,2 +1,3 @@
 include Blog_server
+include Blog_server.For_testing
 include Blog_common

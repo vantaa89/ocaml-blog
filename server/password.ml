@@ -7,10 +7,10 @@ let parallelism = 1
 let salt_len = 16
 let hash_len = 32
 
-let hash_password_exn password =
+let hash_exn password =
   let salt = Mirage_crypto_rng_unix.getrandom salt_len in
   let encoded_len =
-    Argon2.encoded_len ~t_cost ~m_cost ~parallelism ~salt_len ~hash_len ~kind:Argon2.ID
+    Argon2.encoded_len ~t_cost ~m_cost ~parallelism ~salt_len ~hash_len ~kind:ID
   in
   match
     Argon2.ID.hash_encoded
@@ -27,4 +27,17 @@ let hash_password_exn password =
     raise_s
       [%message
         "Failed to hash the password" ~error:(Argon2.ErrorCodes.message error : string)]
+;;
+
+let verify_exn ~password_hash ~password =
+  match Argon2.verify ~encoded:password_hash ~pwd:password ~kind:ID with
+  | Ok true -> true
+  | Ok false ->
+    (* A mismatch is reported as [Error VERIFY_MISMATCH], not [Ok false] *)
+    raise_s [%message "Argon2.verify unexpectedly returned [Ok false]"]
+  | Error VERIFY_MISMATCH -> false
+  | Error error ->
+    raise_s
+      [%message
+        "Failed to verify password" ~error:(Argon2.ErrorCodes.message error : string)]
 ;;
