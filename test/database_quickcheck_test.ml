@@ -27,6 +27,38 @@ module Test_slug = struct
   ;;
 end
 
+module Test_token = struct
+  type t =
+    | A
+    | B
+    | C
+  [@@deriving equal, sexp_of, quickcheck]
+
+  let to_string : t -> string = function
+    | A -> "token-a"
+    | B -> "token-b"
+    | C -> "token-c"
+  ;;
+end
+
+(* Session expiry is expressed relative to a [now] captured once per program, so that both
+   sides agree on the value even though each side runs the op at a slightly different
+   time. A whole day of slack keeps [delete_expired]'s own [Time_ns.now ()] on the
+   intended side of the boundary. *)
+module Test_expiry = struct
+  type t =
+    | Expired
+    | Valid
+  [@@deriving equal, sexp_of, quickcheck]
+
+  let to_time_ns t ~now : Time_ns.t =
+    let one_day = Time_ns.Span.of_day 1. in
+    match t with
+    | Expired -> Time_ns.sub now one_day
+    | Valid -> Time_ns.add now one_day
+  ;;
+end
+
 (* A reference to an entity created earlier in the same program, as an index into the
    creation order. This is needed both to ensure that a generated index always lands on a
    row that is there, and to compare real/mock ids: real ids can drift apart (e.g. a
@@ -74,6 +106,13 @@ module Op = struct
         ; link : Test_string.t option
         }
     | List_publications of { include_hidden : bool }
+    | Create_session of
+        { token : Test_token.t
+        ; expiry : Test_expiry.t
+        }
+    | Find_session of Test_token.t
+    | Delete_session of Test_token.t
+    | Delete_expired_sessions
   [@@deriving sexp_of, quickcheck]
 end
 
@@ -119,6 +158,15 @@ module Observed = struct
       }
     [@@deriving equal, sexp_of]
   end
+
+  module Session = struct
+    type t =
+      { token_hash : string
+      ; user : Ref.t
+      ; expires_at : Time_ns.Alternate_sexp.t
+      }
+    [@@deriving equal, sexp_of]
+  end
 end
 
 module Response = struct
@@ -131,6 +179,7 @@ module Response = struct
     | Tag_counts of (Observed.Tag.t * int) list
     | News of Observed.News.t list
     | Publications of Observed.Publication.t list
+    | Session of Observed.Session.t option
     (* The op referred to an object that does not exist. *)
     | Skipped
     (* Error messages differ between a Postgres error and a [Mock] one, so we only compare
@@ -147,8 +196,10 @@ module Side = struct
     { db : Database.t
     ; posts : int Queue.t
     ; tags : int Queue.t
+    ; users : int Queue.t
     ; author_id : int
     ; image_id : int
+    ; now : Time_ns.t
     ; news_count : int ref
       (* Postgres does not guarantee the order between the news of the same date for
          [News.list] queries. Therefore, we make every news item get a distinct date,
@@ -182,7 +233,14 @@ module Side = struct
     { id = ref_of_id t.tags tag.id; name = tag.name; slug = tag.slug }
   ;;
 
-  let create db =
+  let session_ref t (session : Database_schema.Session.t) : Observed.Session.t =
+    { token_hash = session.token_hash
+    ; user = ref_of_id t.users session.user_id
+    ; expires_at = session.expires_at
+    }
+  ;;
+
+  let create db ~now =
     let username = "author" in
     let%bind author =
       Database.User.create
@@ -200,8 +258,10 @@ module Side = struct
     { db
     ; posts = Queue.create ()
     ; tags = Queue.create ()
+    ; users = Queue.of_list [ author.id ]
     ; author_id = author.id
     ; image_id = image.id
+    ; now
     ; news_count = ref 0
     }
   ;;
@@ -322,6 +382,30 @@ let run_op (side : Side.t) (op : Op.t) =
              ; link = publication.link
              ; hidden = publication.hidden
              }))
+    | Create_session { token; expiry } ->
+      let%map session =
+        Database.Session.create
+          side.db
+          ~token_hash:(Test_token.to_string token)
+          ~user_id:side.author_id
+          ~expires_at:(Test_expiry.to_time_ns expiry ~now:side.now)
+      in
+      Response.Session (Some (Side.session_ref side session))
+    | Find_session token ->
+      let%map session =
+        Database.Session.find_by_token_hash
+          side.db
+          ~token_hash:(Test_token.to_string token)
+      in
+      Response.Session (Option.map session ~f:(Side.session_ref side))
+    | Delete_session token ->
+      let%map () =
+        Database.Session.delete side.db ~token_hash:(Test_token.to_string token)
+      in
+      Response.Unit
+    | Delete_expired_sessions ->
+      let%map () = Database.Session.delete_expired side.db in
+      Response.Unit
   in
   match result with
   | Ok response -> response
@@ -345,16 +429,35 @@ let run_program ~real ~mock ops =
             ~program:(ops : Op.t list)])
 ;;
 
+(* The derived [Op.t list] generator produces programs of about four ops, which is far too
+   short to reach a state that needs several ops to set up (e.g. creating an expired
+   session, sweeping it, then looking it up). Draw the length uniformly instead. *)
+let program_generator =
+  let open Base_quickcheck.Generator.Let_syntax in
+  let%bind length = Base_quickcheck.Generator.int_uniform_inclusive 0 30 in
+  Base_quickcheck.Generator.list_with_length ~length Op.quickcheck_generator
+;;
+
 let%test_unit "Real and Mock databases are observationally equivalent" =
   Thread_safe.block_on_async_exn (fun () ->
     Async_quickcheck.async_test
-      ~trials:50 (* This is an IO-heavy test *)
+      ~trials:300
+        (* This is an IO-heavy test, but each trial is a local-socket roundtrip *)
       ~sexp_of:[%sexp_of: Op.t list]
-      [%quickcheck.generator: Op.t list]
+      program_generator
       ~f:(fun ops ->
+        (* Truncated to a whole second: Postgres [TIMESTAMPTZ] only keeps microseconds, so
+           a nanosecond-precision [now] would not round-trip. *)
+        let now =
+          Time_ns.now ()
+          |> Time_ns.to_span_since_epoch
+          |> Time_ns.Span.to_int_sec
+          |> Time_ns.Span.of_int_sec
+          |> Time_ns.of_span_since_epoch
+        in
         Database.For_testing.with_test_connection ~f:(fun real_db ->
           let%bind () = Database.create_tables real_db >>| ok_exn in
-          let%bind real = Side.create real_db in
-          let%bind mock = Side.create (Database.For_testing.create_in_memory ()) in
+          let%bind real = Side.create real_db ~now in
+          let%bind mock = Side.create (Database.For_testing.create_in_memory ()) ~now in
           run_program ~real ~mock ops)))
 ;;
