@@ -1,0 +1,157 @@
+open! Core
+open! Async
+open! Import
+module Set_cookie_hdr = Cohttp.Cookie.Set_cookie_hdr
+
+(* A rejected login logs its reason, which would otherwise land in the expect output. *)
+let () = Log.Global.set_output []
+let cookie_name = "sessionid"
+
+(* Spaces and an [&] make the round trip through [Uri] encoding part of the test. *)
+let password = "my secret & password"
+
+let user : Database_schema.User.t =
+  { id = 1
+  ; username = "author"
+  ; email = "author@example.com"
+  ; password_hash = Password.hash_exn password
+  ; date_joined = Date.of_string "2026-08-01"
+  ; last_login = None
+  }
+;;
+
+let with_server ~f =
+  let db = Database.For_testing.create_in_memory ~users:[ user ] () in
+  let config : Config.t = { port = 0; static_dir = "static"; media_dir = "media" } in
+  let%bind server = Web_server.serve db config in
+  let port = Cohttp_async.Server.listening_on server in
+  let%bind result = f ~port in
+  let%bind () = Cohttp_async.Server.close server in
+  return result
+;;
+
+let post ~port ~path ?origin ?token params =
+  let server = [%string "http://127.0.0.1:%{port#Int}"] in
+  let cookie =
+    Option.map token ~f:(fun token ->
+      Cohttp.Cookie.Cookie_hdr.serialize [ cookie_name, token ])
+    |> Option.to_list
+  in
+  let headers =
+    ("origin", Option.value origin ~default:server) :: cookie |> Cohttp.Header.of_list
+  in
+  (* [post_form] sets the form content type and encodes [params] with the very function
+     the server decodes them with. *)
+  Cohttp_async.Client.post_form
+    ~headers
+    ~params
+    (Uri.of_string [%string "%{server}%{path}"])
+;;
+
+let login ~port = post ~port ~path:"/users/login"
+let logout ~port ?token () = post ~port ~path:"/users/logout" ?token []
+
+let credentials ~username ~password =
+  [ "username", [ username ]; "password", [ password ] ]
+;;
+
+let print_response (response, body) =
+  let%map () = Cohttp_async.Body.drain body in
+  let set_cookie =
+    Cohttp.Header.get (Cohttp.Response.headers response) "set-cookie"
+    |> Option.map ~f:(fun set_cookie ->
+      (* The token is random, so use its length instead except the case of "deleted" *)
+      let cookie, attributes = String.lsplit2_exn set_cookie ~on:';' in
+      let name, value = String.lsplit2_exn cookie ~on:'=' in
+      match String.equal value "deleted" with
+      | true -> set_cookie
+      | false ->
+        let length = String.length value in
+        [%string "%{name}=<token of %{length#Int} chars>;%{attributes}"])
+  in
+  print_s
+    [%message
+      ""
+        ~status:(Cohttp.Response.status response |> Cohttp.Code.code_of_status : int)
+        (set_cookie : string option)]
+;;
+
+let%expect_test "a correct password starts a session" =
+  let%bind () =
+    with_server ~f:(fun ~port ->
+      let%bind response = login ~port (credentials ~username:"author" ~password) in
+      print_response response)
+  in
+  [%expect
+    {|
+    ((status 204)
+     (set_cookie
+      ("sessionid=<token of 43 chars>; Max-Age=1209600; path=/; secure; httponly"))) |}];
+  return ()
+;;
+
+let%expect_test "a wrong password and an unknown user are rejected alike" =
+  with_server ~f:(fun ~port ->
+    let%bind response =
+      login ~port (credentials ~username:"author" ~password:"not-the-password")
+    in
+    let%bind () = print_response response in
+    [%expect {| ((status 401) (set_cookie ())) |}];
+    let%bind response = login ~port (credentials ~username:"nobody" ~password) in
+    let%bind () = print_response response in
+    [%expect {| ((status 401) (set_cookie ())) |}];
+    return ())
+;;
+
+let%expect_test "a form without both fields is a bad request" =
+  with_server ~f:(fun ~port ->
+    let%bind response = login ~port [ "username", [ "author" ] ] in
+    let%bind () = print_response response in
+    [%expect {| ((status 400) (set_cookie ())) |}];
+    let%bind response = login ~port [] in
+    let%bind () = print_response response in
+    [%expect {| ((status 400) (set_cookie ())) |}];
+    return ())
+;;
+
+let%expect_test "a login from another origin is refused" =
+  let%bind () =
+    with_server ~f:(fun ~port ->
+      let%bind response =
+        login
+          ~port
+          ~origin:"http://evil.example"
+          (credentials ~username:"author" ~password)
+      in
+      print_response response)
+  in
+  [%expect {| ((status 403) (set_cookie ())) |}];
+  return ()
+;;
+
+let%expect_test "logging out clears the cookie, with or without a session" =
+  with_server ~f:(fun ~port ->
+    let%bind login_response, body =
+      login ~port (credentials ~username:"author" ~password)
+    in
+    let%bind () = Cohttp_async.Body.drain body in
+    (* The token a browser would send back from the [Set-Cookie] response. *)
+    let set_cookies = Set_cookie_hdr.extract (Cohttp.Response.headers login_response) in
+    let token =
+      List.Assoc.find_exn set_cookies cookie_name ~equal:String.equal
+      |> Set_cookie_hdr.value
+    in
+    let%bind response = logout ~port ~token () in
+    let%bind () = print_response response in
+    [%expect
+      {|
+        ((status 204)
+         (set_cookie ("sessionid=deleted; Max-Age=0; path=/; secure; httponly"))) |}];
+    let%bind response = logout ~port () in
+    let%bind () = print_response response in
+    [%expect
+      {|
+        ((status 204)
+         (set_cookie ("sessionid=deleted; Max-Age=0; path=/; secure; httponly"))) |}];
+    return ())
+;;
