@@ -73,7 +73,7 @@ let list_users_command =
                  ~last_login:(user.last_login : Time_ns.Alternate_sexp.t option)])))
 ;;
 
-let update_user_command =
+let set_password_command =
   Command.async_or_error
     ~summary:"Change a user's password"
     (let%map_open.Command username = username_flag ~doc:"NAME the user to change" in
@@ -106,7 +106,7 @@ let command =
     ~summary:"Manage the users who can log in"
     [ "create", create_user_command
     ; "list", list_users_command
-    ; "update", update_user_command
+    ; "set-password", set_password_command
     ; "delete", delete_user_command
     ]
 ;;
