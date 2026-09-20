@@ -380,6 +380,57 @@ module User = struct
         |> Option.map ~f:Database_schema.User.of_row)
   ;;
 
+  let list t =
+    match t with
+    | Mock { users; _ } ->
+      List.sort !users ~compare:(fun a b -> Int.compare a.id b.id)
+      |> Deferred.Or_error.return
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let columns = String.concat ~sep:", " Database_schema.User.columns in
+        let%map rows =
+          Pgx_async.execute
+            connection
+            [%string "SELECT %{columns} FROM %{Database_schema.User.table} ORDER BY id"]
+        in
+        List.map rows ~f:Database_schema.User.of_row)
+  ;;
+
+  let set_password_hash t ~username ~password_hash =
+    match t with
+    | Mock { users; _ } ->
+      users
+      := List.map !users ~f:(fun user ->
+           match String.equal user.username username with
+           | false -> user
+           | true -> { user with password_hash });
+      Deferred.Or_error.return ()
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        Pgx_async.execute_unit
+          connection
+          ~params:[ Value.of_string password_hash; Value.of_string username ]
+          [%string
+            "UPDATE %{Database_schema.User.table} SET password_hash = $1 WHERE username \
+             = $2"])
+  ;;
+
+  let delete t ~username =
+    match t with
+    | Mock { users; _ } ->
+      users
+      := List.filter !users ~f:(fun user -> not (String.equal user.username username));
+      Deferred.Or_error.return ()
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        Pgx_async.execute_unit
+          connection
+          ~params:[ Value.of_string username ]
+          [%string "DELETE FROM %{Database_schema.User.table} WHERE username = $1"])
+  ;;
+
   let find_by_username t ~username =
     match t with
     | Mock { users; _ } ->

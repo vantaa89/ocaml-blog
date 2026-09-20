@@ -24,7 +24,10 @@ let create_tables_command =
 let command =
   Command.group
     ~summary:"Blog server"
-    [ "serve", serve_command; "create-tables", create_tables_command ]
+    [ "serve", serve_command
+    ; "create-tables", create_tables_command
+    ; "user", User_command.command
+    ]
 ;;
 
 let () = Command_unix.run command

@@ -60,6 +60,17 @@ module User : sig
     -> Database_schema.User.t Deferred.Or_error.t
 
   val find_by_id : t -> id:int -> Database_schema.User.t option Deferred.Or_error.t
+  val list : t -> Database_schema.User.t list Deferred.Or_error.t
+
+  val set_password_hash
+    :  t
+    -> username:string
+    -> password_hash:string
+    -> unit Deferred.Or_error.t
+
+  (** The user's sessions go with them, since [session.user_id] cascades. Posts do not, so
+      deleting an author who still has posts fails. *)
+  val delete : t -> username:string -> unit Deferred.Or_error.t
 
   val find_by_username
     :  t
