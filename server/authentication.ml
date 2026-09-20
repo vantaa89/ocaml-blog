@@ -101,17 +101,18 @@ let session_token request =
   List.Assoc.find cookies cookie_name ~equal:String.equal
 ;;
 
-let current_user db ~session_token =
+let current_user_id db ~session_token =
   let open Deferred.Or_error.Let_syntax in
   match session_token with
   | None -> return None
   | Some token ->
-    (match%bind Database.Session.find_by_token_hash db ~token_hash:(hash_token token) with
-     | None -> return None
-     | Some session ->
-       (match Time_ns.( > ) session.expires_at (Time_ns.now ()) with
-        | false -> return None
-        | true -> Database.User.find_by_id db ~id:session.user_id))
+    let%map session =
+      Database.Session.find_by_token_hash db ~token_hash:(hash_token token)
+    in
+    Option.bind session ~f:(fun (session : Database_schema.Session.t) ->
+      match Time_ns.( > ) session.expires_at (Time_ns.now ()) with
+      | false -> None
+      | true -> Some session.user_id)
 ;;
 
 let handle_logout db _config request =

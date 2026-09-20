@@ -21,20 +21,21 @@ module Post : sig
   val find_by_slug : t -> slug:string -> Database_schema.Post.t option Deferred.Or_error.t
   val find_by_id : t -> id:int -> Database_schema.Post.t option Deferred.Or_error.t
 
-  (** Returns list of posts. Special posts are excluded *)
+  (** Returns list of posts. Special posts are excluded, and so are the hidden posts of
+      everyone but [viewer], the user reading them. *)
   val list
     :  t
-    -> ?include_hidden:bool (* default: [false] *)
+    -> viewer:int option
     -> ?limit:int
     -> ?offset:int (* default: [0] *)
     -> unit
     -> Database_schema.Post.t list Deferred.Or_error.t
 
-  (** Returns list of posts. Special posts are excluded *)
+  (** Like [list], restricted to the posts carrying [slug]. *)
   val list_by_tag_slug
     :  t
     -> slug:string
-    -> ?include_hidden:bool
+    -> viewer:int option
     -> ?limit:int
     -> ?offset:int (* default: [0] *)
     -> unit

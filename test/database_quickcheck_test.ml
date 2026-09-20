@@ -84,7 +84,7 @@ module Op = struct
         { post : Ref.t
         ; hidden : bool
         }
-    | List_posts of { include_hidden : bool }
+    | List_posts of { as_author : bool }
     | Search_posts of Test_string.t
     | Find_or_create_tag of Test_slug.t
     | Find_tag_by_slug of Test_slug.t
@@ -96,7 +96,7 @@ module Op = struct
     | List_tags_with_post_counts
     | List_posts_by_tag_slug of
         { slug : Test_slug.t
-        ; include_hidden : bool
+        ; as_author : bool
         }
     | Create_news of Test_string.t
     | List_news
@@ -218,6 +218,13 @@ module Side = struct
     | length -> Some (Queue.get queue (index % length))
   ;;
 
+  (* Each side has one author, so a viewer is either them or nobody. *)
+  let viewer t ~as_author =
+    match as_author with
+    | false -> None
+    | true -> Some t.author_id
+  ;;
+
   let post_ref t (post : Database_schema.Post.t) : Observed.Post.t =
     { id = ref_of_id t.posts post.id
     ; title = post.title
@@ -304,8 +311,10 @@ let run_op (side : Side.t) (op : Op.t) =
       with_post_id post ~f:(fun id ->
         let%map () = Database.Post.set_hidden side.db ~id ~hidden in
         Response.Unit)
-    | List_posts { include_hidden } ->
-      let%map posts = Database.Post.list side.db ~include_hidden () in
+    | List_posts { as_author } ->
+      let%map posts =
+        Database.Post.list side.db ~viewer:(Side.viewer side ~as_author) ()
+      in
       Response.Posts (List.map posts ~f:(Side.post_ref side))
     | Search_posts query ->
       let%map posts = Database.Post.search side.db ~query () in
@@ -336,12 +345,12 @@ let run_op (side : Side.t) (op : Op.t) =
       let%map counts = Database.Tag.list_with_post_counts side.db in
       Response.Tag_counts
         (List.map counts ~f:(fun (tag, count) -> Side.tag_ref side tag, count))
-    | List_posts_by_tag_slug { slug; include_hidden } ->
+    | List_posts_by_tag_slug { slug; as_author } ->
       let%map posts =
         Database.Post.list_by_tag_slug
           side.db
           ~slug:(Test_slug.to_string slug)
-          ~include_hidden
+          ~viewer:(Side.viewer side ~as_author)
           ()
       in
       Response.Posts (List.map posts ~f:(Side.post_ref side))

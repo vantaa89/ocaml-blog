@@ -20,8 +20,23 @@ let user : Database_schema.User.t =
   }
 ;;
 
+let hidden_post : Database_schema.Post.t =
+  { id = 1
+  ; title = "Draft"
+  ; slug = "draft"
+  ; content_en = Some "Not ready yet"
+  ; content_ko = None
+  ; author_id = user.id
+  ; created_at = Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z"
+  ; special_post = false
+  ; hidden = true
+  }
+;;
+
 let with_server ~f =
-  let db = Database.For_testing.create_in_memory ~users:[ user ] () in
+  let db =
+    Database.For_testing.create_in_memory ~users:[ user ] ~posts:[ hidden_post ] ()
+  in
   let config : Config.t = { port = 0; static_dir = "static"; media_dir = "media" } in
   let%bind server = Web_server.serve db config in
   let port = Cohttp_async.Server.listening_on server in
@@ -185,5 +200,31 @@ let%expect_test "the session cookie names the user over RPC, until logout" =
     (* The same token no longer names a session. *)
     let%bind () = print_current_user ~token () in
     [%expect {| Not_logged_in |}];
+    return ())
+;;
+
+let%expect_test "a hidden post is visible only to its author" =
+  with_server ~f:(fun ~port ->
+    let print_draft ?token () =
+      let headers = cookie_header token |> Cohttp.Header.of_list in
+      let%bind connection =
+        Rpc_websocket.Rpc.client
+          ~headers
+          (Uri.of_string [%string "ws://127.0.0.1:%{port#Int}%{Urls.websocket_path}"])
+        >>| ok_exn
+      in
+      let%bind post =
+        Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug = hidden_post.slug }
+      in
+      let%map () = Rpc.Connection.close connection in
+      print_s
+        [%sexp (Option.map post ~f:(fun post -> post.Rpcs.Post.title) : string option)]
+    in
+    (* Knowing the slug is not enough. *)
+    let%bind () = print_draft () in
+    [%expect {| () |}];
+    let%bind token = start_session ~port in
+    let%bind () = print_draft ~token () in
+    [%expect {| (Draft) |}];
     return ())
 ;;

@@ -394,15 +394,24 @@ let post_detail ~slug =
        | Some markdown -> Markdown_renderer.render ~markdown)
   in
   let%sub () = Client_utils.rerender_math_on_change html in
+  let%sub current_user = Session.current_user in
+  let%sub set_post_hidden =
+    Rpc_effect.Rpc.dispatcher
+      Rpcs.Set_post_hidden.rpc
+      ~where_to_connect:Rpc_client.where_to_connect
+  in
   let%arr poll = poll
   and html = html
   and language = language
-  and set_language = set_language in
+  and set_language = set_language
+  and current_user = current_user
+  and set_post_hidden = set_post_hidden
+  and slug = slug in
   Client_utils.of_poll poll ~f:(fun post ->
     match post with
     | None -> Client_utils.not_found_node
     | Some
-        ({ title; slug = _; content; created_at; tags; special_post = _; hidden = _ } :
+        ({ title; slug = _; content; created_at; tags; special_post = _; hidden } :
           Rpcs.Post.t) ->
       let read_time =
         Client_utils.primary_content content |> Option.map ~f:Client_utils.read_time
@@ -419,9 +428,31 @@ let post_detail ~slug =
             ; Some [%string "🌐︎ %{languages}"]
             ]
         in
+        let author_action =
+          match current_user with
+          | Not_logged_in -> []
+          | Logged_in _ ->
+            [ Vdom.Node.text " · "
+            ; Vdom.Node.button
+                ~attrs:
+                  [ Vdom.Attr.class_ "author-action"
+                  ; Vdom.Attr.type_ "button"
+                  ; Vdom.Attr.on_click (fun _ ->
+                      let%bind.Effect (_ : unit Or_error.t) =
+                        set_post_hidden { slug; hidden = not hidden }
+                      in
+                      poll.refresh)
+                  ]
+                [ Vdom.Node.text
+                    (match hidden with
+                     | true -> "unhide"
+                     | false -> "hide")
+                ]
+            ]
+        in
         Vdom.Node.p
           ~attrs:[ Vdom.Attr.class_ "post-time" ]
-          [ Vdom.Node.text (String.concat parts ~sep:" · ") ]
+          (Vdom.Node.text (String.concat parts ~sep:" · ") :: author_action)
       in
       let language_toggle =
         match List.length languages > 1 with

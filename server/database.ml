@@ -85,12 +85,20 @@ module Post = struct
         |> Option.map ~f:Database_schema.Post.of_row)
   ;;
 
-  let list t ?(include_hidden = false) ?limit ?(offset = 0) () =
+  (* A hidden post belongs to its author alone. *)
+  let visible_to ~viewer (post : Database_schema.Post.t) =
+    (not post.hidden) || Option.equal Int.equal viewer (Some post.author_id)
+  ;;
+
+  let visible_sql ~prefix ~param =
+    [%string "(NOT %{prefix}hidden OR %{prefix}author_id = $%{param#Int})"]
+  ;;
+
+  let list t ~viewer ?limit ?(offset = 0) () =
     match t with
     | Mock { posts; _ } ->
       !posts
-      |> List.filter ~f:(fun post ->
-        (not post.special_post) && (include_hidden || not post.hidden))
+      |> List.filter ~f:(fun post -> (not post.special_post) && visible_to ~viewer post)
       |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
       |> (fun posts -> List.drop posts offset)
       |> (fun posts ->
@@ -101,11 +109,6 @@ module Post = struct
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
         let module Value = Pgx_async.Value in
-        let where =
-          match include_hidden with
-          | true -> "WHERE NOT special_post"
-          | false -> "WHERE NOT special_post AND NOT hidden"
-        in
         let limit_clause =
           match limit with
           | None -> ""
@@ -115,14 +118,16 @@ module Post = struct
         let%map rows =
           Pgx_async.execute
             connection
+            ~params:[ Value.opt Value.of_int viewer ]
             [%string
-              "SELECT %{columns} FROM %{Database_schema.Post.table} %{where} ORDER BY \
-               created_at DESC %{limit_clause} OFFSET %{offset#Int}"]
+              "SELECT %{columns} FROM %{Database_schema.Post.table} WHERE NOT \
+               special_post AND %{visible_sql ~prefix:\"\" ~param:1} ORDER BY created_at \
+               DESC %{limit_clause} OFFSET %{offset#Int}"]
         in
         List.map rows ~f:Database_schema.Post.of_row)
   ;;
 
-  let list_by_tag_slug t ~slug ?(include_hidden = false) ?limit ?(offset = 0) () =
+  let list_by_tag_slug t ~slug ~viewer ?limit ?(offset = 0) () =
     match t with
     | Mock { posts; tags; post_tags; _ } ->
       (match List.find !tags ~f:(fun tag -> String.equal tag.slug slug) with
@@ -137,9 +142,7 @@ module Post = struct
          in
          !posts
          |> List.filter ~f:(fun post ->
-           Set.mem post_ids post.id
-           && (not post.special_post)
-           && (include_hidden || not post.hidden))
+           Set.mem post_ids post.id && (not post.special_post) && visible_to ~viewer post)
          |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
          |> (fun posts -> List.drop posts offset)
          |> (fun posts ->
@@ -151,9 +154,7 @@ module Post = struct
       Deferred.Or_error.try_with (fun () ->
         let module Value = Pgx_async.Value in
         let where =
-          match include_hidden with
-          | true -> "AND NOT p.special_post"
-          | false -> "AND NOT p.special_post AND NOT p.hidden"
+          [%string "AND NOT p.special_post AND %{visible_sql ~prefix:\"p.\" ~param:2}"]
         in
         let limit_clause =
           match limit with
@@ -168,7 +169,7 @@ module Post = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_string slug ]
+            ~params:[ Value.of_string slug; Value.opt Value.of_int viewer ]
             [%string
               "SELECT %{columns} FROM %{Database_schema.Post.table} p JOIN \
                %{Database_schema.Post_tag.table} pt ON p.id = pt.post_id JOIN \

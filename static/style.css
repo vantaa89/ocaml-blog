@@ -78,25 +78,6 @@
     }
 }
 
-button.btn-style1{
-    background-color: var(--main-theme-color);
-    color: white;
-    height: 36px;
-    padding: 0 24px;
-    border-radius: 18px;
-    border-width: 0;
-    font-weight: normal;
-}
-
-button.btn-style2{
-    background-color: white;
-    color: var(--main-theme-color);
-    height: 36px;
-    border-width: 0;
-    border-radius: 18px;
-    font-weight: normal;
-}
-
 /* 제목 강조 효과 */
 h1#title {
     text-align: center;
@@ -606,19 +587,6 @@ h1#title {
     margin-top: 0;
 }
 
-.post-detail-header .delete-post{
-    color: gray;
-    background-color: inherit;
-    font-weight: normal;
-    margin-left: auto;
-    text-decoration: none;
-    border: none;
-}
-
-.post-detail-header .delete-post:hover{
-    text-decoration: underline;
-}
-
 /* 사진의 폭 통일 */
 
 @media (max-width: 768px){
@@ -657,28 +625,6 @@ h1#title {
 }
 
 
-/* editor 페이지 */
-#editor #PostForm input, textarea {
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    border: 1px solid #AAA;
-    border-radius: 2px;
-}
-
-#editor #PostForm #id_title {
-    border: none;
-    margin: 0 10px;
-    height: 40px;
-    padding-left: 5px;
-    font-size: x-large;
-    font-weight: bold;
-}
-
-#editor #PostForm #id_content {
-    height: 50vh;
-}
-
 .paginator {
     list-style-type: none;
     display: flex;
@@ -699,19 +645,6 @@ h1#title {
 .paginator .paginator-item.active{
     background-color: var(--main-theme-color);
     color: white;
-}
-
-.guestbook-input-form{
-    height: 40px;
-    padding-left: 5px;
-    font-weight: bold;
-}
-
-.guestbook-input-form textarea, .guestbook-input-form input{
-    border: 1px solid black;
-    border-radius: 2px;
-    padding: 2px;
-    margin: 4px 0;
 }
 
 /* Search Modal Styles */
@@ -792,7 +725,6 @@ h1#title {
 
 .search-placeholder,
 .search-loading,
-.search-error,
 .search-no-results {
     padding: 40px 20px;
     text-align: center;
@@ -995,4 +927,20 @@ mark {
 .language-btn.active {
     background: white;
     color: #20639B;
+}
+
+/* Author-only controls. They sit inside metadata lines such as [.post-time] rather than
+   standing out as buttons, since only the blog's author ever sees them. */
+
+.author-action{
+    background-color: inherit;
+    color: inherit;
+    font-size: inherit;
+    font-weight: normal;
+    padding: 0;
+    border: none;
+}
+
+.author-action:hover{
+    text-decoration: underline;
 }

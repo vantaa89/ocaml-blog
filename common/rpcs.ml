@@ -178,6 +178,24 @@ module Search_posts = struct
   ;;
 end
 
+module Set_post_hidden = struct
+  module Query = struct
+    type t =
+      { slug : string
+      ; hidden : bool
+      }
+    [@@deriving bin_io, sexp, equal]
+  end
+
+  let rpc =
+    Rpc.Rpc.create
+      ~name:"set-post-hidden"
+      ~version:0
+      ~bin_query:Query.bin_t
+      ~bin_response:Unit.bin_t
+  ;;
+end
+
 module Get_current_user = struct
   module Response = struct
     type t =

@@ -80,14 +80,26 @@ let posts_to_summaries db ?query (posts : Database_schema.Post.t list) =
      : Rpcs.Post_summary.t))
 ;;
 
-let find_post db ~slug =
+let visible_to ~viewer (post : Database_schema.Post.t) =
+  match post.hidden with
+  | false -> true
+  | true ->
+    (match viewer with
+     | None -> false
+     | Some user_id -> user_id = post.author_id)
+;;
+
+let find_post db ~slug ~viewer =
   let open Deferred.Or_error.Let_syntax in
   let%bind post = Database.Post.find_by_slug db ~slug in
   match post with
   | None -> return None
   | Some post ->
-    let%map post = post_to_rpc db post in
-    Some post
+    (match visible_to ~viewer post with
+     | false -> return None
+     | true ->
+       let%map post = post_to_rpc db post in
+       Some post)
 ;;
 
 let tags_with_counts db =
@@ -114,10 +126,10 @@ let publication_to_rpc db (publication : Database_schema.Publication.t) =
    : Rpcs.Publication.t)
 ;;
 
-let main_page db =
+let main_page db ~viewer =
   let open Deferred.Or_error.Let_syntax in
-  let%bind main_post = find_post db ~slug:"main" in
-  let%bind recent_posts = Database.Post.list db ~limit:4 () in
+  let%bind main_post = find_post db ~slug:"main" ~viewer in
+  let%bind recent_posts = Database.Post.list db ~viewer:None ~limit:4 () in
   let%bind recent_posts = posts_to_summaries db recent_posts in
   let%bind publications = Database.Publication.list db () in
   let%bind publications =
@@ -134,14 +146,13 @@ let main_page db =
    : Rpcs.Get_main_page.Response.t)
 ;;
 
-let post_list db ~query ~include_hidden =
+let post_list db ~query ~viewer =
   let open Deferred.Or_error.Let_syntax in
   let ({ tag_slug; limit; offset } : Rpcs.Get_post_list.Query.t) = query in
   let%bind posts =
     match tag_slug with
-    | None -> Database.Post.list db ~include_hidden ?limit ?offset ()
-    | Some slug ->
-      Database.Post.list_by_tag_slug db ~slug ~include_hidden ?limit ?offset ()
+    | None -> Database.Post.list db ~viewer ?limit ?offset ()
+    | Some slug -> Database.Post.list_by_tag_slug db ~slug ~viewer ?limit ?offset ()
   in
   posts_to_summaries db posts
 ;;
@@ -156,17 +167,32 @@ let search db ~query =
     posts_to_summaries db posts ~query
 ;;
 
+(* Only the author may hide or unhide, and a post they cannot see is one they cannot
+   change either. *)
+let set_post_hidden db ~query:({ slug; hidden } : Rpcs.Set_post_hidden.Query.t) ~viewer =
+  match%bind.Deferred.Or_error Database.Post.find_by_slug db ~slug with
+  | None -> Deferred.Or_error.error_s [%message "No such post" (slug : string)]
+  | Some post ->
+    (match
+       visible_to ~viewer post && Option.equal Int.equal viewer (Some post.author_id)
+     with
+     | false -> Deferred.Or_error.error_s [%message "Not yours to change" (slug : string)]
+     | true -> Database.Post.set_hidden db ~id:post.id ~hidden)
+;;
+
 let current_user db ~session_token =
-  let%map.Deferred.Or_error user = Authentication.current_user db ~session_token in
+  let open Deferred.Or_error.Let_syntax in
+  let%bind user_id = Authentication.current_user_id db ~session_token in
+  let%map user =
+    match user_id with
+    | None -> return None
+    | Some id -> Database.User.find_by_id db ~id
+  in
   ((match user with
     | None -> Not_logged_in
     | Some user -> Logged_in { username = user.username })
    : Rpcs.Get_current_user.Response.t)
 ;;
-
-(* TODO: Hidden posts are only visible to their authenticated author. Authentication is
-   not wired up yet, so they stay hidden from every caller. *)
-let include_hidden = false
 
 module Connection_state = struct
   type t =
@@ -181,21 +207,29 @@ let implement rpc f =
 ;;
 
 let implementations =
+  let open Deferred.Or_error.Let_syntax in
   Rpc.Implementations.create_exn
     ~on_unknown_rpc:`Close_connection
     ~implementations:
-      [ implement Rpcs.Get_main_page.rpc (fun { db; session_token = _ } () ->
-          main_page db)
-      ; implement Rpcs.Get_about_page.rpc (fun { db; session_token = _ } () ->
-          find_post db ~slug:"about")
-      ; implement Rpcs.Get_post.rpc (fun { db; session_token = _ } { slug } ->
-          find_post db ~slug)
-      ; implement Rpcs.Get_post_list.rpc (fun { db; session_token = _ } query ->
-          post_list db ~query ~include_hidden)
+      [ implement Rpcs.Get_main_page.rpc (fun { db; session_token } () ->
+          let%bind viewer = Authentication.current_user_id db ~session_token in
+          main_page db ~viewer)
+      ; implement Rpcs.Get_about_page.rpc (fun { db; session_token } () ->
+          let%bind viewer = Authentication.current_user_id db ~session_token in
+          find_post db ~slug:"about" ~viewer)
+      ; implement Rpcs.Get_post.rpc (fun { db; session_token } { slug } ->
+          let%bind viewer = Authentication.current_user_id db ~session_token in
+          find_post db ~slug ~viewer)
+      ; implement Rpcs.Get_post_list.rpc (fun { db; session_token } query ->
+          let%bind viewer = Authentication.current_user_id db ~session_token in
+          post_list db ~query ~viewer)
       ; implement Rpcs.Get_tags.rpc (fun { db; session_token = _ } () ->
           tags_with_counts db)
       ; implement Rpcs.Search_posts.rpc (fun { db; session_token = _ } { query } ->
           search db ~query)
+      ; implement Rpcs.Set_post_hidden.rpc (fun { db; session_token } query ->
+          let%bind viewer = Authentication.current_user_id db ~session_token in
+          set_post_hidden db ~query ~viewer)
       ; implement Rpcs.Get_current_user.rpc (fun { db; session_token } () ->
           current_user db ~session_token)
       ; implement Rpcs.Render_markdown.rpc (fun _state { markdown } ->
