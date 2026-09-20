@@ -16,3 +16,11 @@ val handle_logout
   -> Config.t
   -> Cohttp.Request.t
   -> Cohttp_async.Server.response Deferred.t
+
+(** The session token a request carries, if any. *)
+val session_token : Cohttp.Request.t -> string option
+
+val current_user
+  :  Database.t
+  -> session_token:string option
+  -> Database_schema.User.t option Deferred.Or_error.t

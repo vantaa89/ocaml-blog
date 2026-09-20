@@ -4,7 +4,7 @@ open! Import
 module Server = Cohttp_async.Server
 
 module Http_route = struct
-  let media_url = "media"
+  let media_url = String.chop_prefix_exn Urls.media_path ~prefix:"/"
   let static_url = "static"
 
   type t =
@@ -77,9 +77,14 @@ let serve db (config : Config.t) =
   in
   Rpc_websocket.Rpc.serve
     ~where_to_listen:(Tcp.Where_to_listen.of_port config.port)
-    ~implementations:
-      (Rpc_implementations.implementations ~media_url:("/" ^ Http_route.media_url))
-    ~initial_connection_state:(fun () _initiated_from _address _connection -> db)
+    ~implementations:Rpc_implementations.implementations
+    ~initial_connection_state:(fun () initiated_from _address _connection ->
+      let session_token =
+        match (initiated_from : Rpc_websocket.Rpc.Connection_initiated_from.t) with
+        | Tcp -> None
+        | Websocket_request request -> Authentication.session_token request
+      in
+      ({ db; session_token } : Rpc_implementations.Connection_state.t))
     ~http_handler:(http_handler config)
     ~on_handler_error:
       (`Call

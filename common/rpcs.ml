@@ -178,6 +178,23 @@ module Search_posts = struct
   ;;
 end
 
+module Get_current_user = struct
+  module Response = struct
+    type t =
+      | Logged_in of { username : string }
+      | Not_logged_in
+    [@@deriving bin_io, sexp, equal]
+  end
+
+  let rpc =
+    Rpc.Rpc.create
+      ~name:"get-current-user"
+      ~version:0
+      ~bin_query:Unit.bin_t
+      ~bin_response:Response.bin_t
+  ;;
+end
+
 module Render_markdown = struct
   module Query = struct
     type t = { markdown : string } [@@deriving bin_io, sexp, equal]
@@ -195,5 +212,3 @@ module Render_markdown = struct
       ~bin_response:Response.bin_t
   ;;
 end
-
-let websocket_path = "/rpc"

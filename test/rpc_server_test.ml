@@ -39,7 +39,7 @@ let with_client db ~f =
   let config : Config.t = { port = 0; static_dir = "static"; media_dir = "media" } in
   let%bind server = Web_server.serve db config in
   let port = Cohttp_async.Server.listening_on server in
-  let uri = Uri.of_string [%string "ws://127.0.0.1:%{port#Int}%{Rpcs.websocket_path}"] in
+  let uri = Uri.of_string [%string "ws://127.0.0.1:%{port#Int}%{Urls.websocket_path}"] in
   let%bind connection = Rpc_websocket.Rpc.client uri >>| ok_exn in
   let%bind result = f connection in
   let%bind () = Rpc.Connection.close connection in

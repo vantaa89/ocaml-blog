@@ -96,14 +96,14 @@ let tags_with_counts db =
     { tag = tag_to_rpc tag; post_count })
 ;;
 
-let publication_to_rpc db ~media_url (publication : Database_schema.Publication.t) =
+let publication_to_rpc db (publication : Database_schema.Publication.t) =
   let%map.Deferred.Or_error image =
     Database.Image.find_by_id db ~id:publication.image_id
   in
   let image_url =
     match image with
     | None -> ""
-    | Some image -> Database_schema.Image.url image ~media_url
+    | Some image -> Database_schema.Image.url image
   in
   ({ title = publication.title
    ; image_url
@@ -114,17 +114,14 @@ let publication_to_rpc db ~media_url (publication : Database_schema.Publication.
    : Rpcs.Publication.t)
 ;;
 
-let main_page db ~media_url =
+let main_page db =
   let open Deferred.Or_error.Let_syntax in
   let%bind main_post = find_post db ~slug:"main" in
   let%bind recent_posts = Database.Post.list db ~limit:4 () in
   let%bind recent_posts = posts_to_summaries db recent_posts in
   let%bind publications = Database.Publication.list db () in
   let%bind publications =
-    Deferred.Or_error.List.map
-      publications
-      ~how:`Sequential
-      ~f:(publication_to_rpc db ~media_url)
+    Deferred.Or_error.List.map publications ~how:`Sequential ~f:(publication_to_rpc db)
   in
   let%map news = Database.News.list db in
   ({ main_post
@@ -159,23 +156,49 @@ let search db ~query =
     posts_to_summaries db posts ~query
 ;;
 
+let current_user db ~session_token =
+  let%map.Deferred.Or_error user = Authentication.current_user db ~session_token in
+  ((match user with
+    | None -> Not_logged_in
+    | Some user -> Logged_in { username = user.username })
+   : Rpcs.Get_current_user.Response.t)
+;;
+
 (* TODO: Hidden posts are only visible to their authenticated author. Authentication is
    not wired up yet, so they stay hidden from every caller. *)
 let include_hidden = false
-let implement rpc f = Rpc.Rpc.implement rpc (fun db query -> f db query >>| ok_exn)
 
-let implementations ~media_url =
+module Connection_state = struct
+  type t =
+    { db : Database.t
+    ; session_token : string option
+    }
+end
+
+let implement rpc f =
+  Rpc.Rpc.implement rpc (fun (state : Connection_state.t) query ->
+    f state query >>| ok_exn)
+;;
+
+let implementations =
   Rpc.Implementations.create_exn
     ~on_unknown_rpc:`Close_connection
     ~implementations:
-      [ implement Rpcs.Get_main_page.rpc (fun db () -> main_page db ~media_url)
-      ; implement Rpcs.Get_about_page.rpc (fun db () -> find_post db ~slug:"about")
-      ; implement Rpcs.Get_post.rpc (fun db { slug } -> find_post db ~slug)
-      ; implement Rpcs.Get_post_list.rpc (fun db query ->
+      [ implement Rpcs.Get_main_page.rpc (fun { db; session_token = _ } () ->
+          main_page db)
+      ; implement Rpcs.Get_about_page.rpc (fun { db; session_token = _ } () ->
+          find_post db ~slug:"about")
+      ; implement Rpcs.Get_post.rpc (fun { db; session_token = _ } { slug } ->
+          find_post db ~slug)
+      ; implement Rpcs.Get_post_list.rpc (fun { db; session_token = _ } query ->
           post_list db ~query ~include_hidden)
-      ; implement Rpcs.Get_tags.rpc (fun db () -> tags_with_counts db)
-      ; implement Rpcs.Search_posts.rpc (fun db { query } -> search db ~query)
-      ; implement Rpcs.Render_markdown.rpc (fun _db { markdown } ->
+      ; implement Rpcs.Get_tags.rpc (fun { db; session_token = _ } () ->
+          tags_with_counts db)
+      ; implement Rpcs.Search_posts.rpc (fun { db; session_token = _ } { query } ->
+          search db ~query)
+      ; implement Rpcs.Get_current_user.rpc (fun { db; session_token } () ->
+          current_user db ~session_token)
+      ; implement Rpcs.Render_markdown.rpc (fun _state { markdown } ->
           Deferred.Or_error.return (Markdown_renderer.render ~markdown))
       ]
 ;;

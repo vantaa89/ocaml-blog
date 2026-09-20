@@ -65,7 +65,7 @@ module Image = struct
     }
   [@@deriving fields, compare]
 
-  let url t ~media_url = media_url ^/ Date.to_string t.date ^/ t.filename
+  let url t = Urls.media_path ^/ Date.to_string t.date ^/ t.filename
   let table = "image"
   let columns = Fields.names
 

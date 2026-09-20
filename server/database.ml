@@ -361,6 +361,25 @@ module User = struct
             [%message "Unexpected result from User insert" (rows : Value.t list list)])
   ;;
 
+  let find_by_id t ~id =
+    match t with
+    | Mock { users; _ } ->
+      List.find !users ~f:(fun user -> user.id = id) |> Deferred.Or_error.return
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        let columns = String.concat ~sep:", " Database_schema.User.columns in
+        let%map rows =
+          Pgx_async.execute
+            connection
+            ~params:[ Value.of_int id ]
+            [%string "SELECT %{columns} FROM %{Database_schema.User.table} WHERE id = $1"]
+        in
+        Utils.expect_at_most_one rows ~error_message:(fun _ ->
+          [%message "Expected at most one user for id" (id : int)])
+        |> Option.map ~f:Database_schema.User.of_row)
+  ;;
+
   let find_by_username t ~username =
     match t with
     | Mock { users; _ } ->

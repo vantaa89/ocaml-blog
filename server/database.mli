@@ -59,6 +59,8 @@ module User : sig
     -> date_joined:Date.t
     -> Database_schema.User.t Deferred.Or_error.t
 
+  val find_by_id : t -> id:int -> Database_schema.User.t option Deferred.Or_error.t
+
   val find_by_username
     :  t
     -> username:string

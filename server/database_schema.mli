@@ -36,7 +36,7 @@ module Image : sig
   val create_sql : string
   val columns : string list
   val of_row : Pgx.Value.t list -> t
-  val url : t -> media_url:string -> string
+  val url : t -> string
 end
 
 module Tag : sig

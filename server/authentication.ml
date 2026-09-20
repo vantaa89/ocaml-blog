@@ -92,6 +92,24 @@ let handle_login db _config ~body _request =
          `No_content)
 ;;
 
+let session_token request =
+  let cookies = Cohttp.Cookie.Cookie_hdr.extract (Cohttp.Request.headers request) in
+  List.Assoc.find cookies cookie_name ~equal:String.equal
+;;
+
+let current_user db ~session_token =
+  let open Deferred.Or_error.Let_syntax in
+  match session_token with
+  | None -> return None
+  | Some token ->
+    (match%bind Database.Session.find_by_token_hash db ~token_hash:(hash_token token) with
+     | None -> return None
+     | Some session ->
+       (match Time_ns.( > ) session.expires_at (Time_ns.now ()) with
+        | false -> return None
+        | true -> Database.User.find_by_id db ~id:session.user_id))
+;;
+
 let handle_logout db _config request =
   let respond_logged_out () =
     let headers =
@@ -103,8 +121,7 @@ let handle_logout db _config request =
     in
     Cohttp_async.Server.respond ~headers `No_content
   in
-  let cookies = Cohttp.Cookie.Cookie_hdr.extract (Cohttp.Request.headers request) in
-  match List.Assoc.find cookies cookie_name ~equal:String.equal with
+  match session_token request with
   | None -> respond_logged_out ()
   | Some token ->
     (match%bind Database.Session.delete db ~token_hash:(hash_token token) with
