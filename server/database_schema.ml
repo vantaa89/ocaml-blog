@@ -2,6 +2,15 @@ open! Core
 open! Async
 open! Import
 
+(* [Pgx_async.Value]'s own [to_time] and [of_time] go through [Time_float], and parse
+   offset-less timestamps in the local zone. Postgres sends and accepts timestamps as
+   text, so convert that text to and from [Time_ns] directly instead. *)
+let time_ns_of_value_exn value =
+  Pgx_async.Value.to_string_exn value |> Time_ns.of_string_with_utc_offset
+;;
+
+let value_of_time_ns time = Time_ns.to_string_utc time |> Pgx_async.Value.of_string
+
 module User = struct
   type t =
     { id : int
@@ -26,7 +35,9 @@ module User = struct
       ; password_hash = Value.to_string_exn password_hash
       ; date_joined = Value.to_date_exn date_joined
       ; last_login =
-          Value.to_time last_login |> Option.map ~f:Time_ns.of_time_float_round_nearest
+          (match last_login with
+           | None -> None
+           | Some _ -> Some (time_ns_of_value_exn last_login))
       }
     | _ -> raise_s [%message "Unexpected row shape for User" (row : Value.t list)]
   ;;
@@ -159,7 +170,7 @@ module Post = struct
       ; content_en = Value.to_string content_en
       ; content_ko = Value.to_string content_ko
       ; author_id = Value.to_int_exn author_id
-      ; created_at = Value.to_time_exn created_at |> Time_ns.of_time_float_round_nearest
+      ; created_at = time_ns_of_value_exn created_at
       ; special_post = Value.to_bool_exn special_post
       ; hidden = Value.to_bool_exn hidden
       }
@@ -264,6 +275,44 @@ module News = struct
   ;;
 end
 
+module Session = struct
+  type t =
+    { token_hash : string (* SHA-256 of the token in the session cookie *)
+    ; user_id : int
+    ; expires_at : Time_ns.t
+    }
+  [@@deriving fields, compare]
+
+  let table = "session"
+  let columns = Fields.names
+
+  let of_row row : t =
+    let module Value = Pgx_async.Value in
+    match row with
+    | [ token_hash; user_id; expires_at ] ->
+      { token_hash = Value.to_string_exn token_hash
+      ; user_id = Value.to_int_exn user_id
+      ; expires_at = time_ns_of_value_exn expires_at
+      }
+    | _ -> raise_s [%message "Unexpected row shape for Session" (row : Value.t list)]
+  ;;
+
+  (* Needs secondary index based on [expires_at] to sweep expired sessions *)
+  let create_sql =
+    [ [%string
+        {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
+      token_hash TEXT PRIMARY KEY,
+      user_id INT NOT NULL REFERENCES %{User.table} (id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL
+    )
+    |sql}]
+    ; [%string
+        "CREATE INDEX IF NOT EXISTS %{table}_expires_at_idx ON %{table} (expires_at)"]
+    ]
+  ;;
+end
+
 module Post_tag = struct
   type t =
     { post_id : int
@@ -296,5 +345,6 @@ let create_sql =
   ; Publication.create_sql
   ; News.create_sql
   ]
+  @ Session.create_sql
   @ Post_tag.create_sql
 ;;

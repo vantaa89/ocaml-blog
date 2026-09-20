@@ -263,7 +263,7 @@ module Post = struct
           ; Value.opt Value.of_string content_en
           ; Value.opt Value.of_string content_ko
           ; Value.of_int author_id
-          ; Value.of_time (Time_ns.to_time_float_round_nearest_microsecond created_at)
+          ; Database_schema.value_of_time_ns created_at
           ; Value.of_bool special_post
           ; Value.of_bool hidden
           ]

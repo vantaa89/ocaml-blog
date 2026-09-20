@@ -62,9 +62,10 @@ let excerpt content ~query ~max_length =
 ;;
 
 let posts_to_summaries db ?query (posts : Database_schema.Post.t list) =
-  let open Deferred.Or_error.Let_syntax in
   Deferred.Or_error.List.map ~how:`Sequential posts ~f:(fun post ->
-    let%map tags = Database.Post_tag.tags_for_post db ~post_id:post.id in
+    let%map.Deferred.Or_error tags =
+      Database.Post_tag.tags_for_post db ~post_id:post.id
+    in
     ({ title = post.title
      ; slug = post.slug
      ; excerpt =

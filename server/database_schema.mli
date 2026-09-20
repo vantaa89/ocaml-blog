@@ -2,6 +2,11 @@ open! Core
 open! Async
 open! Import
 
+(** Converts to [TIMESTAMPTZ] without going through [Time_float], unlike
+    [Pgx_async.Value.of_time]. Note that [TIMESTAMPTZ] itself only keeps microseconds, so
+    a written [Time_ns.t] does not round-trip. *)
+val value_of_time_ns : Time_ns.t -> Pgx.Value.t
+
 module User : sig
   type t =
     { id : int
@@ -97,6 +102,20 @@ module News : sig
 
   val table : string
   val create_sql : string
+  val columns : string list
+  val of_row : Pgx.Value.t list -> t
+end
+
+module Session : sig
+  type t =
+    { token_hash : string
+    ; user_id : int
+    ; expires_at : Time_ns.t
+    }
+  [@@deriving compare]
+
+  val table : string
+  val create_sql : string list
   val columns : string list
   val of_row : Pgx.Value.t list -> t
 end
