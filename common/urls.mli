@@ -6,3 +6,5 @@ open! Core
 val websocket_path : string
 
 val media_path : string
+val login_path : string
+val logout_path : string

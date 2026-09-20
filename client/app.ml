@@ -75,11 +75,29 @@ let navbar ~search_trigger =
     ]
 ;;
 
-let footer ~year =
+let footer ~year ~(current_user : Rpcs.Get_current_user.Response.t) ~log_out =
+  let session_node =
+    match current_user with
+    | Not_logged_in ->
+      Client_utils.link
+        ~attrs:[ Vdom.Attr.class_ "nav-link" ]
+        Login
+        [ Vdom.Node.text "login" ]
+    | Logged_in { username } ->
+      Vdom.Node.button
+        ~attrs:
+          [ Vdom.Attr.class_ "logout-button"
+          ; Vdom.Attr.style (Css_gen.create ~field:"display" ~value:"block")
+          ; Vdom.Attr.on_click (fun _ -> log_out)
+          ]
+        [ Vdom.Node.text [%string "%{username} (logout)"] ]
+  in
   Vdom.Node.create
     "nav"
     ~attrs:[ Vdom.Attr.class_ "footer" ]
-    [ Vdom.Node.p [ Vdom.Node.text [%string "© 2024 - %{year#Int} Your Name"] ] ]
+    [ Vdom.Node.p [ Vdom.Node.text [%string "© 2024 - %{year#Int} Your Name"] ]
+    ; session_node
+    ]
 ;;
 
 let set_title =
@@ -102,12 +120,21 @@ let component =
     | Post { slug } -> Pages.post_detail ~slug
     | Posts { tag_slug; page } -> Pages.posts ~tag_slug ~page
     | Search { query; page } -> Pages.search ~query ~page
+    | Login -> Login_page.component
   in
   let%sub now = Bonsai.Clock.approx_now ~tick_every:(Time_ns.Span.of_hr 1.) in
+  let%sub current_user = Session.current_user in
   let%arr page = page
   and search_trigger = search_trigger
   and search_modal = search_modal
-  and now = now in
+  and now = now
+  and current_user = current_user in
   let year = Time_ns.to_date now ~zone:Client_utils.zone |> Date.year in
-  Vdom.Node.div [ navbar ~search_trigger; page; footer ~year; search_modal ]
+  let log_out =
+    match%bind.Effect Session.log_out () with
+    | Ok () -> Session.reload_home ()
+    | Error _ -> Effect.Ignore
+  in
+  Vdom.Node.div
+    [ navbar ~search_trigger; page; footer ~year ~current_user ~log_out; search_modal ]
 ;;

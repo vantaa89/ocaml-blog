@@ -51,8 +51,8 @@ let post ~port ~path ?origin ?token params =
     (Uri.of_string [%string "%{server}%{path}"])
 ;;
 
-let login ~port = post ~port ~path:"/users/login"
-let logout ~port ?token () = post ~port ~path:"/users/logout" ?token []
+let login ~port = post ~port ~path:Urls.login_path
+let logout ~port ?token () = post ~port ~path:Urls.logout_path ?token []
 
 let credentials ~username ~password =
   [ "username", [ username ]; "password", [ password ] ]

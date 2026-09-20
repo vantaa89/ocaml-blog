@@ -68,6 +68,12 @@ module User : sig
     -> password_hash:string
     -> unit Deferred.Or_error.t
 
+  val set_last_login
+    :  t
+    -> username:string
+    -> last_login:Time_ns.t
+    -> unit Deferred.Or_error.t
+
   (** The user's sessions go with them, since [session.user_id] cascades. Posts do not, so
       deleting an author who still has posts fails. *)
   val delete : t -> username:string -> unit Deferred.Or_error.t

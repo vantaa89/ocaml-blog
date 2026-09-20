@@ -69,13 +69,17 @@ let handle_login db _config ~body _request =
              Mirage_crypto_rng_unix.getrandom token_length
              |> Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet
            in
-           let expires_at = Time_ns.add (Time_ns.now ()) session_span in
+           let now = Time_ns.now () in
+           let%bind () =
+             Database.User.set_last_login db ~username ~last_login:now
+             |> Deferred.Or_error.tag ~tag:"recording the login"
+           in
            let%map (_ : Database_schema.Session.t) =
              Database.Session.create
                db
                ~token_hash:(hash_token token)
                ~user_id:user.id
-               ~expires_at
+               ~expires_at:(Time_ns.add now session_span)
              |> Deferred.Or_error.tag ~tag:"creating the session"
            in
            `Logged_in token)

@@ -30,8 +30,8 @@ module Http_route = struct
           | true, true -> Not_found (* impossible *)))
     | `POST ->
       (match segments with
-       | [ "users"; "login" ] -> Login
-       | [ "users"; "logout" ] -> Logout
+       | [ "login" ] -> Login
+       | [ "logout" ] -> Logout
        | _ -> Not_found)
     | _ -> Not_found
   ;;

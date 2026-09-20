@@ -16,6 +16,7 @@ type t =
       { query : string
       ; page : int
       }
+  | Login
 
 include Bonsai_web_ui_url_var.S with type t := t
 

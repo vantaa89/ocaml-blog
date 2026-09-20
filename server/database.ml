@@ -416,6 +416,26 @@ module User = struct
              = $2"])
   ;;
 
+  let set_last_login t ~username ~last_login =
+    match t with
+    | Mock { users; _ } ->
+      users
+      := List.map !users ~f:(fun user ->
+           match String.equal user.username username with
+           | false -> user
+           | true -> { user with last_login = Some last_login });
+      Deferred.Or_error.return ()
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        Pgx_async.execute_unit
+          connection
+          ~params:
+            [ Database_schema.value_of_time_ns last_login; Value.of_string username ]
+          [%string
+            "UPDATE %{Database_schema.User.table} SET last_login = $1 WHERE username = $2"])
+  ;;
+
   let delete t ~username =
     match t with
     | Mock { users; _ } ->

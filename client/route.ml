@@ -13,6 +13,7 @@ type t =
       { query : string
       ; page : int
       }
+  | Login
 [@@deriving sexp, equal]
 
 let page_of_query query =
@@ -45,6 +46,7 @@ let parse_exn (components : Bonsai_web_ui_url_var.Components.t) : t =
     in
     Posts { tag_slug; page }
   | [ "post"; slug ] -> Post { slug }
+  | [ "login" ] -> Login
   | [ "search"; query ] -> Search { query; page }
   | _ -> Home
 ;;
@@ -62,6 +64,7 @@ let unparse (t : t) : Bonsai_web_ui_url_var.Components.t =
   match t with
   | Home -> create ""
   | About -> create "about"
+  | Login -> create "login"
   | Post { slug } -> create [%string "post/%{Uri.pct_encode slug}"]
   | Posts { tag_slug; page } ->
     let query =
@@ -88,7 +91,7 @@ let with_page t page =
   match t with
   | Posts { tag_slug; page = _ } -> Posts { tag_slug; page }
   | Search { query; page = _ } -> Search { query; page }
-  | (Home | About | Post _) as t -> t
+  | (Home | About | Post _ | Login) as t -> t
 ;;
 
 let title = function
@@ -98,4 +101,5 @@ let title = function
   | Post { slug } -> slug
   | About -> "about"
   | Search { query; _ } -> [%string "search: %{query}"]
+  | Login -> "login"
 ;;
