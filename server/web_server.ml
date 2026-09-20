@@ -57,19 +57,23 @@ let serve_file ~docroot ~path =
 
 let serve db (config : Config.t) =
   let http_handler (config : Config.t) () ~body _address request =
-    let uri = Cohttp.Request.uri request in
-    match
-      Http_route.of_request ~meth:(Cohttp.Request.meth request) ~path:(Uri.path uri)
-    with
-    | Media { path } -> serve_file ~docroot:config.media_dir ~path
-    | Static { path } -> serve_file ~docroot:config.static_dir ~path
-    | Index -> serve_file ~docroot:config.static_dir ~path:"index.html"
-    | Login ->
-      with_same_origin_check request ~f:(fun () ->
-        Auth.handle_login db config ~body request)
-    | Logout ->
-      with_same_origin_check request ~f:(fun () -> Auth.handle_logout db config request)
-    | Not_found -> Server.respond_string ~status:`Not_found "Not found"
+    let meth = Cohttp.Request.meth request in
+    let dispatch () =
+      let uri = Cohttp.Request.uri request in
+      match Http_route.of_request ~meth ~path:(Uri.path uri) with
+      | Media { path } -> serve_file ~docroot:config.media_dir ~path
+      | Static { path } -> serve_file ~docroot:config.static_dir ~path
+      | Index -> serve_file ~docroot:config.static_dir ~path:"index.html"
+      | Login -> Authentication.handle_login db config ~body request
+      | Logout -> Authentication.handle_logout db config request
+      | Not_found -> Server.respond_string ~status:`Not_found "Not found"
+    in
+    match meth with
+    | `GET | `HEAD -> dispatch ()
+    | `POST | `PUT | `PATCH | `DELETE | `CONNECT | `OPTIONS | `TRACE | `Other _ ->
+      (* A status-changing method should be checked for same-origin. [`GET] and [`HEAD]
+         are exempt because browsers omit [Origin] on ordinary navigations. *)
+      with_same_origin_check request ~f:dispatch
   in
   Rpc_websocket.Rpc.serve
     ~where_to_listen:(Tcp.Where_to_listen.of_port config.port)

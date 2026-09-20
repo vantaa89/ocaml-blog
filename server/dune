@@ -5,6 +5,9 @@
   async
   async_rpc_websocket
   argon2
+  base64
+  digestif
+  uri
   pgx_async
   cohttp-async
   cohttp_async_websocket

@@ -1,0 +1,113 @@
+open! Core
+open! Async
+open! Import
+
+let cookie_name = "sessionid"
+let session_span = Time_ns.Span.of_day 14.
+let token_length = 32
+
+(* The cookie carries the token itself and the database keeps only its digest, so a leaked
+   [session] table does not hand out usable sessions. *)
+let hash_token token = Digestif.SHA256.digest_string token |> Digestif.SHA256.to_hex
+
+let session_cookie ~value ~max_age =
+  let header =
+    Cohttp.Cookie.Set_cookie_hdr.make
+      ~expiration:(`Max_age (Time_ns.Span.to_int_sec max_age |> Int64.of_int))
+      ~path:"/"
+      ~secure:true
+      ~http_only:true
+      (cookie_name, value)
+    |> Cohttp.Cookie.Set_cookie_hdr.serialize
+  in
+  Cohttp.Header.of_list [ header ]
+;;
+
+let respond_internal_error error =
+  Log.Global.error_s
+    [%message "Error while handling an authentication request" (error : Error.t)];
+  Cohttp_async.Server.respond_string
+    ~status:`Internal_server_error
+    "Internal server error"
+;;
+
+let handle_login db _config ~body _request =
+  let%bind body = Cohttp_async.Body.to_string body in
+  let field name =
+    let form = Uri.query_of_encoded body in
+    (* [Uri.query_of_encoded] splits each value on [,], so we concatenate using comma *)
+    List.Assoc.find form name ~equal:String.equal
+    |> Option.map ~f:(String.concat ~sep:",")
+  in
+  match Option.both (field "username") (field "password") with
+  | None ->
+    Cohttp_async.Server.respond_string
+      ~status:`Bad_request
+      "Expected a username and a password"
+  | Some (username, password) ->
+    let logged_in =
+      let open Deferred.Or_error.Let_syntax in
+      match%bind
+        Database.User.find_by_username db ~username
+        |> Deferred.Or_error.tag ~tag:"looking up the user"
+      with
+      | None -> return `Denied
+      | Some user ->
+        (match%bind
+           Password.verify ~password_hash:user.password_hash ~password |> Deferred.return
+         with
+         | false -> return `Denied
+         | true ->
+           (* Logins are the only location where the [session] table grows, so we sweep
+              the table here to remove stale entries. *)
+           don't_wait_for
+             (let%map.Deferred swept = Database.Session.delete_expired db in
+              Or_error.iter_error swept ~f:(fun error ->
+                Log.Global.error_s
+                  [%message "Failed to delete expired sessions" (error : Error.t)]));
+           let token =
+             Mirage_crypto_rng_unix.getrandom token_length
+             |> Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet
+           in
+           let expires_at = Time_ns.add (Time_ns.now ()) session_span in
+           let%map (_ : Database_schema.Session.t) =
+             Database.Session.create
+               db
+               ~token_hash:(hash_token token)
+               ~user_id:user.id
+               ~expires_at
+             |> Deferred.Or_error.tag ~tag:"creating the session"
+           in
+           `Logged_in token)
+    in
+    (match%bind logged_in with
+     | Error error -> respond_internal_error error
+     | Ok `Denied ->
+       Cohttp_async.Server.respond_string
+         ~status:`Unauthorized
+         "Invalid username or password"
+     | Ok (`Logged_in token) ->
+       Cohttp_async.Server.respond
+         ~headers:(session_cookie ~value:token ~max_age:session_span)
+         `No_content)
+;;
+
+let handle_logout db _config request =
+  let respond_logged_out () =
+    let headers =
+      (* Cookies do not provide deletion, so this is the standard way of deleting cookies.
+         The value is set somewhat arbitrarily, but it must not be empty:
+         [Set_cookie_hdr.serialize] then omits the [=] and browsers ignore the whole
+         header. *)
+      session_cookie ~value:"deleted" ~max_age:Time_ns.Span.zero
+    in
+    Cohttp_async.Server.respond ~headers `No_content
+  in
+  let cookies = Cohttp.Cookie.Cookie_hdr.extract (Cohttp.Request.headers request) in
+  match List.Assoc.find cookies cookie_name ~equal:String.equal with
+  | None -> respond_logged_out ()
+  | Some token ->
+    (match%bind Database.Session.delete db ~token_hash:(hash_token token) with
+     | Error error -> respond_internal_error error
+     | Ok () -> respond_logged_out ())
+;;
