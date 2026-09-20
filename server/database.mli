@@ -119,6 +119,25 @@ module News : sig
   val list : t -> Database_schema.News.t list Deferred.Or_error.t
 end
 
+module Session : sig
+  val create
+    :  t
+    -> token_hash:string
+    -> user_id:int
+    -> expires_at:Time_ns.t
+    -> Database_schema.Session.t Deferred.Or_error.t
+
+  (** Returns the session even when it has already expired, so callers must check
+      [expires_at] themselves. *)
+  val find_by_token_hash
+    :  t
+    -> token_hash:string
+    -> Database_schema.Session.t option Deferred.Or_error.t
+
+  val delete : t -> token_hash:string -> unit Deferred.Or_error.t
+  val delete_expired : t -> unit Deferred.Or_error.t
+end
+
 module For_testing : sig
   val create_in_memory
     :  ?posts:Database_schema.Post.t list
@@ -128,6 +147,7 @@ module For_testing : sig
     -> ?post_tags:Database_schema.Post_tag.t list
     -> ?publication:Database_schema.Publication.t list
     -> ?news:Database_schema.News.t list
+    -> ?sessions:Database_schema.Session.t list
     -> unit
     -> t
 

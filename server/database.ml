@@ -12,6 +12,7 @@ type t =
       ; post_tags : Database_schema.Post_tag.t list ref
       ; publication : Database_schema.Publication.t list ref
       ; news : Database_schema.News.t list ref
+      ; sessions : Database_schema.Session.t list ref
       }
 
 let is_unique rows ~field ~value =
@@ -717,6 +718,96 @@ module News = struct
   ;;
 end
 
+module Session = struct
+  let create t ~token_hash ~user_id ~expires_at =
+    let session : Database_schema.Session.t = { token_hash; user_id; expires_at } in
+    match t with
+    | Mock { sessions; _ } ->
+      (match
+         is_unique !sessions ~field:(fun session -> session.token_hash) ~value:token_hash
+       with
+       | false ->
+         Deferred.return
+           (Or_error.error_s
+              [%message
+                "duplicate key value violates unique constraint" (token_hash : string)])
+       | true ->
+         sessions := session :: !sessions;
+         Deferred.Or_error.return session)
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        let%map () =
+          Pgx_async.execute_unit
+            connection
+            ~params:
+              [ Value.of_string token_hash
+              ; Value.of_int user_id
+              ; Database_schema.value_of_time_ns expires_at
+              ]
+            [%string
+              {sql|
+            INSERT INTO %{Database_schema.Session.table} (token_hash, user_id, expires_at)
+            VALUES ($1, $2, $3)
+            |sql}]
+        in
+        session)
+  ;;
+
+  let find_by_token_hash t ~token_hash =
+    match t with
+    | Mock { sessions; _ } ->
+      List.find !sessions ~f:(fun session -> String.equal session.token_hash token_hash)
+      |> Deferred.Or_error.return
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        let columns = String.concat ~sep:", " Database_schema.Session.columns in
+        let%map rows =
+          Pgx_async.execute
+            connection
+            ~params:[ Value.of_string token_hash ]
+            [%string
+              "SELECT %{columns} FROM %{Database_schema.Session.table} WHERE token_hash \
+               = $1"]
+        in
+        Utils.expect_at_most_one rows ~error_message:(fun _ ->
+          [%message "Expected at most one session for token hash"])
+        |> Option.map ~f:Database_schema.Session.of_row)
+  ;;
+
+  let delete t ~token_hash =
+    match t with
+    | Mock { sessions; _ } ->
+      sessions
+      := List.filter !sessions ~f:(fun session ->
+           not (String.equal session.token_hash token_hash));
+      Deferred.Or_error.return ()
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        Pgx_async.execute_unit
+          connection
+          ~params:[ Value.of_string token_hash ]
+          [%string "DELETE FROM %{Database_schema.Session.table} WHERE token_hash = $1"])
+  ;;
+
+  let delete_expired t =
+    let now = Time_ns.now () in
+    match t with
+    | Mock { sessions; _ } ->
+      sessions
+      := List.filter !sessions ~f:(fun session -> Time_ns.( > ) session.expires_at now);
+      Deferred.Or_error.return ()
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        Pgx_async.execute_unit
+          connection
+          ~params:[ Database_schema.value_of_time_ns now ]
+          [%string "DELETE FROM %{Database_schema.Session.table} WHERE expires_at <= $1"])
+  ;;
+end
+
 module For_testing = struct
   let create_in_memory
         ?(posts = [])
@@ -726,6 +817,7 @@ module For_testing = struct
         ?(post_tags = [])
         ?(publication = [])
         ?(news = [])
+        ?(sessions = [])
         ()
     =
     Mock
@@ -736,6 +828,7 @@ module For_testing = struct
       ; post_tags = ref post_tags
       ; publication = ref publication
       ; news = ref news
+      ; sessions = ref sessions
       }
   ;;
 
