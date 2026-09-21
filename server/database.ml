@@ -299,6 +299,47 @@ module Post = struct
           raise_s
             [%message "Unexpected result from Post insert" (rows : Value.t list list)])
   ;;
+
+  let update t ~id ~title ~slug ~content_en ~content_ko ~special_post =
+    match t with
+    | Mock { posts; _ } ->
+      (* The post keeping its own slug is not a duplicate, so it is left out of the
+         check. *)
+      let others = List.filter !posts ~f:(fun post -> post.id <> id) in
+      (match is_unique others ~field:(fun post -> post.slug) ~value:slug with
+       | false ->
+         Deferred.return
+           (Or_error.error_s
+              [%message "duplicate key value violates unique constraint" (slug : string)])
+       | true ->
+         posts
+         := List.map !posts ~f:(fun post ->
+              match post.id = id with
+              | true -> { post with title; slug; content_en; content_ko; special_post }
+              | false -> post);
+         Deferred.Or_error.return ())
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        let params =
+          [ Value.of_string title
+          ; Value.of_string slug
+          ; Value.opt Value.of_string content_en
+          ; Value.opt Value.of_string content_ko
+          ; Value.of_bool special_post
+          ; Value.of_int id
+          ]
+        in
+        Pgx_async.execute_unit
+          connection
+          ~params
+          [%string
+            {sql|
+          UPDATE %{Database_schema.Post.table}
+          SET title = $1, slug = $2, content_en = $3, content_ko = $4, special_post = $5
+          WHERE id = $6
+          |sql}])
+  ;;
 end
 
 module User = struct

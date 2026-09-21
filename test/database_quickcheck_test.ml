@@ -84,6 +84,13 @@ module Op = struct
         { post : Ref.t
         ; hidden : bool
         }
+    | Update_post of
+        { post : Ref.t
+        ; slug : Test_slug.t
+        ; content_en : Test_string.t option
+        ; content_ko : Test_string.t option
+        ; special_post : bool
+        }
     | List_posts of { as_author : bool }
     | Search_posts of Test_string.t
     | Find_or_create_tag of Test_slug.t
@@ -310,6 +317,20 @@ let run_op (side : Side.t) (op : Op.t) =
     | Set_hidden { post; hidden } ->
       with_post_id post ~f:(fun id ->
         let%map () = Database.Post.set_hidden side.db ~id ~hidden in
+        Response.Unit)
+    | Update_post { post; slug; content_en; content_ko; special_post } ->
+      with_post_id post ~f:(fun id ->
+        let slug = Test_slug.to_string slug in
+        let%map () =
+          Database.Post.update
+            side.db
+            ~id
+            ~title:[%string "post %{slug}"]
+            ~slug
+            ~content_en
+            ~content_ko
+            ~special_post
+        in
         Response.Unit)
     | List_posts { as_author } ->
       let%map posts =

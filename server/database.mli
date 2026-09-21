@@ -49,6 +49,17 @@ module Post : sig
     -> Database_schema.Post.t list Deferred.Or_error.t
 
   val set_hidden : t -> id:int -> hidden:bool -> unit Deferred.Or_error.t
+
+  (** Updates the post with [id]. Fails if the slug is already used by other post. *)
+  val update
+    :  t
+    -> id:int
+    -> title:string
+    -> slug:string
+    -> content_en:string option
+    -> content_ko:string option
+    -> special_post:bool
+    -> unit Deferred.Or_error.t
 end
 
 module User : sig
