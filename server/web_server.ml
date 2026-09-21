@@ -55,7 +55,8 @@ let serve_file ~docroot ~path =
   | `No | `Unknown -> Server.respond_string ~status:`Not_found "File not found"
 ;;
 
-let serve db (config : Config.t) =
+let serve ~time_source db (config : Config.t) =
+  let authenticator = Authenticator.create ~config ~time_source in
   let http_handler (config : Config.t) () ~body _address request =
     let meth = Cohttp.Request.meth request in
     let dispatch () =
@@ -64,8 +65,8 @@ let serve db (config : Config.t) =
       | Media { path } -> serve_file ~docroot:config.media_dir ~path
       | Static { path } -> serve_file ~docroot:config.static_dir ~path
       | Index -> serve_file ~docroot:config.static_dir ~path:"index.html"
-      | Login -> Authentication.handle_login db config ~body request
-      | Logout -> Authentication.handle_logout db config request
+      | Login -> Authenticator.login authenticator ~db ~body request
+      | Logout -> Authenticator.logout ~db request
       | Not_found -> Server.respond_string ~status:`Not_found "Not found"
     in
     match meth with
@@ -82,7 +83,7 @@ let serve db (config : Config.t) =
       let session_token =
         match (initiated_from : Rpc_websocket.Rpc.Connection_initiated_from.t) with
         | Tcp -> None
-        | Websocket_request request -> Authentication.session_token request
+        | Websocket_request request -> Authenticator.session_token request
       in
       ({ db; session_token } : Rpc_implementations.Connection_state.t))
     ~http_handler:(http_handler config)

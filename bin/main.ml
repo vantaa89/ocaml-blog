@@ -8,7 +8,9 @@ let serve_command =
     (let%map_open.Command config = Config.param in
      fun () ->
        Database.with_connection ~f:(fun db ->
-         let%bind server = Web_server.serve db config in
+         let%bind server =
+           Web_server.serve ~time_source:(Time_source.wall_clock ()) db config
+         in
          Log.Global.info_s
            [%message "Listening" ~port:(Cohttp_async.Server.listening_on server : int)];
          Cohttp_async.Server.close_finished server))

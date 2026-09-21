@@ -25,6 +25,7 @@ end
 (** Starts listening. Pass a port of 0 to bind an arbitrary free port, which
     [Cohttp_async.Server.listening_on] then reports. *)
 val serve
-  :  Database.t
+  :  time_source:Time_source.t
+  -> Database.t
   -> Config.t
   -> (Socket.Address.Inet.t, int) Cohttp_async.Server.t Deferred.t

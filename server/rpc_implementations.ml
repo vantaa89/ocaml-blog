@@ -182,7 +182,7 @@ let set_post_hidden db ~query:({ slug; hidden } : Rpcs.Set_post_hidden.Query.t) 
 
 let current_user db ~session_token =
   let open Deferred.Or_error.Let_syntax in
-  let%bind user_id = Authentication.current_user_id db ~session_token in
+  let%bind user_id = Authenticator.current_user_id ~db ~session_token in
   let%map user =
     match user_id with
     | None -> return None
@@ -212,23 +212,23 @@ let implementations =
     ~on_unknown_rpc:`Close_connection
     ~implementations:
       [ implement Rpcs.Get_main_page.rpc (fun { db; session_token } () ->
-          let%bind viewer = Authentication.current_user_id db ~session_token in
+          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
           main_page db ~viewer)
       ; implement Rpcs.Get_about_page.rpc (fun { db; session_token } () ->
-          let%bind viewer = Authentication.current_user_id db ~session_token in
+          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
           find_post db ~slug:"about" ~viewer)
       ; implement Rpcs.Get_post.rpc (fun { db; session_token } { slug } ->
-          let%bind viewer = Authentication.current_user_id db ~session_token in
+          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
           find_post db ~slug ~viewer)
       ; implement Rpcs.Get_post_list.rpc (fun { db; session_token } query ->
-          let%bind viewer = Authentication.current_user_id db ~session_token in
+          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
           post_list db ~query ~viewer)
       ; implement Rpcs.Get_tags.rpc (fun { db; session_token = _ } () ->
           tags_with_counts db)
       ; implement Rpcs.Search_posts.rpc (fun { db; session_token = _ } { query } ->
           search db ~query)
       ; implement Rpcs.Set_post_hidden.rpc (fun { db; session_token } query ->
-          let%bind viewer = Authentication.current_user_id db ~session_token in
+          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
           set_post_hidden db ~query ~viewer)
       ; implement Rpcs.Get_current_user.rpc (fun { db; session_token } () ->
           current_user db ~session_token)

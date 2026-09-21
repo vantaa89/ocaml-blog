@@ -925,8 +925,10 @@ module For_testing = struct
 
   let with_test_connection ~f =
     Pgx_async.with_conn ~database:"blogdb_test" (fun connection ->
-      (* Reset the database every time *)
-      let%bind () = Pgx_async.execute_unit connection "DROP SCHEMA public CASCADE" in
+      (* Reset the database every time. *)
+      let%bind () =
+        Pgx_async.execute_unit connection "DROP SCHEMA IF EXISTS public CASCADE"
+      in
       let%bind () = Pgx_async.execute_unit connection "CREATE SCHEMA public" in
       let t = Real { connection } in
       f t)

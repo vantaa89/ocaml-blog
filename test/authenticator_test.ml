@@ -7,6 +7,15 @@ module Set_cookie_hdr = Cohttp.Cookie.Set_cookie_hdr
 let () = Log.Global.set_output []
 let cookie_name = "sessionid"
 
+let config : Config.t =
+  { port = 0
+  ; static_dir = "static"
+  ; media_dir = "media"
+  ; max_login_attempts = 5
+  ; login_attempt_window = Time_ns.Span.of_min 15.
+  }
+;;
+
 (* Spaces and an [&] make the round trip through [Uri] encoding part of the test. *)
 let password = "my secret & password"
 
@@ -37,10 +46,14 @@ let with_server ~f =
   let db =
     Database.For_testing.create_in_memory ~users:[ user ] ~posts:[ hidden_post ] ()
   in
-  let config : Config.t = { port = 0; static_dir = "static"; media_dir = "media" } in
-  let%bind server = Web_server.serve db config in
+  let time_source =
+    Time_source.create ~now:(Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z") ()
+  in
+  let%bind server =
+    Web_server.serve ~time_source:(Time_source.read_only time_source) db config
+  in
   let port = Cohttp_async.Server.listening_on server in
-  let%bind result = f ~port in
+  let%bind result = f ~port ~time_source in
   let%bind () = Cohttp_async.Server.close server in
   return result
 ;;
@@ -106,7 +119,7 @@ let start_session ~port =
 
 let%expect_test "a correct password starts a session" =
   let%bind () =
-    with_server ~f:(fun ~port ->
+    with_server ~f:(fun ~port ~time_source:_ ->
       let%bind response = login ~port (credentials ~username:"author" ~password) in
       print_response response)
   in
@@ -119,7 +132,7 @@ let%expect_test "a correct password starts a session" =
 ;;
 
 let%expect_test "a wrong password and an unknown user are rejected alike" =
-  with_server ~f:(fun ~port ->
+  with_server ~f:(fun ~port ~time_source:_ ->
     let%bind response =
       login ~port (credentials ~username:"author" ~password:"not-the-password")
     in
@@ -132,7 +145,7 @@ let%expect_test "a wrong password and an unknown user are rejected alike" =
 ;;
 
 let%expect_test "a form without both fields is a bad request" =
-  with_server ~f:(fun ~port ->
+  with_server ~f:(fun ~port ~time_source:_ ->
     let%bind response = login ~port [ "username", [ "author" ] ] in
     let%bind () = print_response response in
     [%expect {| ((status 400) (set_cookie ())) |}];
@@ -144,7 +157,7 @@ let%expect_test "a form without both fields is a bad request" =
 
 let%expect_test "a login from another origin is refused" =
   let%bind () =
-    with_server ~f:(fun ~port ->
+    with_server ~f:(fun ~port ~time_source:_ ->
       let%bind response =
         login
           ~port
@@ -158,7 +171,7 @@ let%expect_test "a login from another origin is refused" =
 ;;
 
 let%expect_test "logging out clears the cookie, with or without a session" =
-  with_server ~f:(fun ~port ->
+  with_server ~f:(fun ~port ~time_source:_ ->
     let%bind token = start_session ~port in
     let%bind response = logout ~port ~token () in
     let%bind () = print_response response in
@@ -176,7 +189,7 @@ let%expect_test "logging out clears the cookie, with or without a session" =
 ;;
 
 let%expect_test "the session cookie names the user over RPC, until logout" =
-  with_server ~f:(fun ~port ->
+  with_server ~f:(fun ~port ~time_source:_ ->
     let print_current_user ?token () =
       let headers = cookie_header token |> Cohttp.Header.of_list in
       let%bind connection =
@@ -204,7 +217,7 @@ let%expect_test "the session cookie names the user over RPC, until logout" =
 ;;
 
 let%expect_test "a hidden post is visible only to its author" =
-  with_server ~f:(fun ~port ->
+  with_server ~f:(fun ~port ~time_source:_ ->
     let print_draft ?token () =
       let headers = cookie_header token |> Cohttp.Header.of_list in
       let%bind connection =
@@ -226,5 +239,54 @@ let%expect_test "a hidden post is visible only to its author" =
     let%bind token = start_session ~port in
     let%bind () = print_draft ~token () in
     [%expect {| (Draft) |}];
+    return ())
+;;
+
+let%expect_test "repeated failures lock a username out" =
+  with_server ~f:(fun ~port ~time_source ->
+    let wrong_password () =
+      let%bind response =
+        login ~port (credentials ~username:"author" ~password:"not-the-password")
+      in
+      print_response response
+    in
+    let%bind () =
+      List.init config.max_login_attempts ~f:Fn.id
+      |> Deferred.List.iter ~how:`Sequential ~f:(fun _ -> wrong_password ())
+    in
+    [%expect
+      {|
+      ((status 401) (set_cookie ()))
+      ((status 401) (set_cookie ()))
+      ((status 401) (set_cookie ()))
+      ((status 401) (set_cookie ()))
+      ((status 401) (set_cookie ())) |}];
+    (* Next attempt never reaches the password check. *)
+    let%bind () = wrong_password () in
+    [%expect {| ((status 429) (set_cookie ())) |}];
+    (* Even the right password is turned away while the count stands. *)
+    let%bind response = login ~port (credentials ~username:"author" ~password) in
+    let%bind () = print_response response in
+    [%expect {| ((status 429) (set_cookie ())) |}];
+    (* Another name has its own count. *)
+    let%bind response =
+      login ~port (credentials ~username:"nobody" ~password:"not-the-password")
+    in
+    let%bind () = print_response response in
+    [%expect {| ((status 401) (set_cookie ())) |}];
+    (* Once the failures have aged out of the window, the name is free again. An attempt
+       is swept only once it is strictly older than the window, hence the extra second. *)
+    let%bind () =
+      Time_source.advance_by_alarms_by
+        time_source
+        Time_ns.Span.(config.login_attempt_window + of_sec 1.)
+    in
+    let%bind response = login ~port (credentials ~username:"author" ~password) in
+    let%bind () = print_response response in
+    [%expect
+      {|
+      ((status 204)
+       (set_cookie
+        ("sessionid=<token of 43 chars>; Max-Age=1209600; path=/; secure; httponly"))) |}];
     return ())
 ;;
