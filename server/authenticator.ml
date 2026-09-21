@@ -46,7 +46,7 @@ let respond_internal_error error =
     "Internal server error"
 ;;
 
-let login t ~db ~body _request =
+let login t ~db ~now ~body _request =
   let%bind body = Cohttp_async.Body.to_string body in
   let field name =
     let form = Uri.query_of_encoded body in
@@ -83,7 +83,7 @@ let login t ~db ~body _request =
               (* Logins are the only location where the [session] table grows, so we sweep
                  the table here to remove stale entries. *)
               don't_wait_for
-                (let%map.Deferred swept = Database.Session.delete_expired db in
+                (let%map.Deferred swept = Database.Session.delete_expired db ~now in
                  Or_error.iter_error swept ~f:(fun error ->
                    Log.Global.error_s
                      [%message "Failed to delete expired sessions" (error : Error.t)]));
@@ -91,7 +91,6 @@ let login t ~db ~body _request =
                 Mirage_crypto_rng_unix.getrandom token_length
                 |> Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet
               in
-              let now = Time_ns.now () in
               let%bind () =
                 Database.User.set_last_login db ~username ~last_login:now
                 |> Deferred.Or_error.tag ~tag:"recording the login"
@@ -124,7 +123,7 @@ let session_token request =
   List.Assoc.find cookies cookie_name ~equal:String.equal
 ;;
 
-let current_user_id ~db ~session_token =
+let current_user_id ~db ~now ~session_token =
   let open Deferred.Or_error.Let_syntax in
   match session_token with
   | None -> return None
@@ -133,7 +132,7 @@ let current_user_id ~db ~session_token =
       Database.Session.find_by_token_hash db ~token_hash:(hash_token token)
     in
     Option.bind session ~f:(fun (session : Database_schema.Session.t) ->
-      match Time_ns.( > ) session.expires_at (Time_ns.now ()) with
+      match Time_ns.( > ) session.expires_at now with
       | false -> None
       | true -> Some session.user_id)
 ;;

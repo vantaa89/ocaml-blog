@@ -196,6 +196,61 @@ module Set_post_hidden = struct
   ;;
 end
 
+module Post_form = struct
+  type t =
+    { title : string
+    ; slug : string
+    ; content : string Map.M(Language).t
+    ; special_post : bool
+    }
+  [@@deriving bin_io, sexp, equal]
+end
+
+module Create_post = struct
+  module Response = struct
+    type t =
+      | Saved
+      | Not_logged_in
+      | Duplicate_slug
+    [@@deriving bin_io, sexp, equal]
+  end
+
+  let rpc =
+    Rpc.Rpc.create
+      ~name:"create-post"
+      ~version:0
+      ~bin_query:Post_form.bin_t
+      ~bin_response:Response.bin_t
+  ;;
+end
+
+module Update_post = struct
+  module Query = struct
+    type t =
+      { slug : string (** The post to change. [form.slug] may differ, renaming it. *)
+      ; form : Post_form.t
+      }
+    [@@deriving bin_io, sexp, equal]
+  end
+
+  module Response = struct
+    type t =
+      | Saved
+      | Not_logged_in
+      | Not_found (** A post someone else owns is not there as far as the caller goes. *)
+      | Duplicate_slug
+    [@@deriving bin_io, sexp, equal]
+  end
+
+  let rpc =
+    Rpc.Rpc.create
+      ~name:"update-post"
+      ~version:0
+      ~bin_query:Query.bin_t
+      ~bin_response:Response.bin_t
+  ;;
+end
+
 module Get_current_user = struct
   module Response = struct
     type t =

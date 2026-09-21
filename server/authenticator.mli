@@ -11,6 +11,7 @@ val create : config:Config.t -> time_source:Time_source.t -> t
 val login
   :  t
   -> db:Database.t
+  -> now:Time_ns.t
   -> body:Cohttp_async.Body.t
   -> Cohttp.Request.t
   -> Cohttp_async.Server.response Deferred.t
@@ -22,5 +23,6 @@ val session_token : Cohttp.Request.t -> string option
 
 val current_user_id
   :  db:Database.t
+  -> now:Time_ns.t
   -> session_token:string option
   -> int option Deferred.Or_error.t

@@ -16,6 +16,7 @@ module Post : sig
     -> content_ko:string option
     -> author_id:int
     -> special_post:bool
+    -> now:Time_ns.t
     -> Database_schema.Post.t Deferred.Or_error.t
 
   val find_by_slug : t -> slug:string -> Database_schema.Post.t option Deferred.Or_error.t
@@ -166,7 +167,7 @@ module Session : sig
     -> Database_schema.Session.t option Deferred.Or_error.t
 
   val delete : t -> token_hash:string -> unit Deferred.Or_error.t
-  val delete_expired : t -> unit Deferred.Or_error.t
+  val delete_expired : t -> now:Time_ns.t -> unit Deferred.Or_error.t
 end
 
 module For_testing : sig

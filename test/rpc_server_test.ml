@@ -5,6 +5,17 @@ open! Import
 let () = Log.Global.set_output []
 let zone = Timezone.find_exn "Asia/Seoul"
 let start_date = Date.of_string "2026-08-01"
+let password = "password"
+
+let author : Database_schema.User.t =
+  { id = 1
+  ; username = "author"
+  ; email = "author@example.com"
+  ; password_hash = Password.hash_exn password
+  ; date_joined = start_date
+  ; last_login = None
+  }
+;;
 
 (* Posts are ordered by [created_at], so each one gets a distinct day. *)
 let post ~id ~slug ~title ~special_post : Database_schema.Post.t =
@@ -14,7 +25,7 @@ let post ~id ~slug ~title ~special_post : Database_schema.Post.t =
   ; slug
   ; content_en = Some [%string "Content of %{title}"]
   ; content_ko = None
-  ; author_id = 1
+  ; author_id = author.id
   ; created_at =
       Time_ns.of_date_ofday
         ~zone:(Timezone.find_exn "Asia/Seoul")
@@ -33,27 +44,26 @@ let posts =
 
 let tags : Database_schema.Tag.t list = [ { id = 1; name = "OCaml"; slug = "ocaml" } ]
 let post_tags : Database_schema.Post_tag.t list = [ { post_id = 2; tag_id = 1 } ]
-let default_db () = Database.For_testing.create_in_memory ~posts ~tags ~post_tags ()
 
-let with_client db ~f =
-  let config : Config.t = { Config.default with port = 0 } in
-  let%bind server = Web_server.serve ~time_source:(Time_source.wall_clock ()) db config in
-  let port = Cohttp_async.Server.listening_on server in
-  let uri = Uri.of_string [%string "ws://127.0.0.1:%{port#Int}%{Urls.websocket_path}"] in
-  let%bind connection = Rpc_websocket.Rpc.client uri >>| ok_exn in
-  let%bind result = f connection in
-  let%bind () = Rpc.Connection.close connection in
-  let%bind () = Cohttp_async.Server.close server in
-  return result
+let with_seeded_server ~f =
+  Server_test_helpers.with_server
+    (Database.For_testing.create_in_memory ~users:[ author ] ~posts ~tags ~post_tags ())
+    ~f
+;;
+
+let print_post connection ~slug =
+  let%map post = Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug } in
+  print_s [%sexp (post : Rpcs.Post.t option)]
 ;;
 
 let%expect_test "the post list excludes special posts" =
   let%bind response =
-    with_client (default_db ()) ~f:(fun connection ->
-      Rpc.Rpc.dispatch_exn
-        Rpcs.Get_post_list.rpc
-        connection
-        { tag_slug = None; limit = None; offset = None })
+    with_seeded_server ~f:(fun server ->
+      Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
+        Rpc.Rpc.dispatch_exn
+          Rpcs.Get_post_list.rpc
+          connection
+          { tag_slug = None; limit = None; offset = None }))
   in
   print_s [%sexp (response : Rpcs.Post_summary.t list)];
   [%expect
@@ -66,8 +76,9 @@ let%expect_test "the post list excludes special posts" =
 
 let%expect_test "the tag list reports how many posts carry each tag" =
   let%bind response =
-    with_client (default_db ()) ~f:(fun connection ->
-      Rpc.Rpc.dispatch_exn Rpcs.Get_tags.rpc connection ())
+    with_seeded_server ~f:(fun server ->
+      Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
+        Rpc.Rpc.dispatch_exn Rpcs.Get_tags.rpc connection ()))
   in
   print_s [%sexp (response : Rpcs.Tag_with_count.t list)];
   [%expect {| (((tag ((name OCaml) (slug ocaml))) (post_count 1))) |}];
@@ -76,8 +87,9 @@ let%expect_test "the tag list reports how many posts carry each tag" =
 
 let%expect_test "a post is fetched by slug, with its tags and languages" =
   let%bind response =
-    with_client (default_db ()) ~f:(fun connection ->
-      Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug = "hello-world" })
+    with_seeded_server ~f:(fun server ->
+      Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
+        Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug = "hello-world" }))
   in
   print_s [%sexp (response : Rpcs.Post.t option)];
   [%expect
@@ -90,31 +102,31 @@ let%expect_test "a post is fetched by slug, with its tags and languages" =
 ;;
 
 let%expect_test "search centers the excerpt on the match and ignores short queries" =
-  let%bind matching =
-    with_client (default_db ()) ~f:(fun connection ->
+  with_seeded_server ~f:(fun server ->
+    Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
       let dispatch query =
         Rpc.Rpc.dispatch_exn Rpcs.Search_posts.rpc connection { query }
       in
-      dispatch "world")
-  in
-  print_s [%sexp (matching : Rpcs.Post_summary.t list)];
-  [%expect
-    {|
+      let%bind matching = dispatch "world" in
+      print_s [%sexp (matching : Rpcs.Post_summary.t list)];
+      [%expect
+        {|
     (((title "Hello world") (slug hello-world) (excerpt "Content of Hello world")
       (created_at "2026-08-02 15:00:00Z") (tags (((name OCaml) (slug ocaml))))
       (languages (English)))) |}];
-  return ()
+      return ()))
 ;;
 
 let%expect_test "markdown is rendered server-side" =
-  let%bind html =
-    with_client (default_db ()) ~f:(fun connection ->
-      Rpc.Rpc.dispatch_exn Rpcs.Render_markdown.rpc connection { markdown = "# Title" })
-  in
-  print_endline html;
-  [%expect
-    {| <h1 id="title"><a class="anchor" aria-hidden="true" href="#title"></a>Title</h1> |}];
-  return ()
+  with_seeded_server ~f:(fun server ->
+    Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
+      let%bind html =
+        Rpc.Rpc.dispatch_exn Rpcs.Render_markdown.rpc connection { markdown = "# Title" }
+      in
+      print_endline html;
+      [%expect
+        {| <h1 id="title"><a class="anchor" aria-hidden="true" href="#title"></a>Title</h1> |}];
+      return ()))
 ;;
 
 let%expect_test
@@ -159,8 +171,9 @@ let%expect_test
       ()
   in
   let%bind response =
-    with_client db ~f:(fun connection ->
-      Rpc.Rpc.dispatch_exn Rpcs.Get_main_page.rpc connection ())
+    Server_test_helpers.with_server db ~f:(fun server ->
+      Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
+        Rpc.Rpc.dispatch_exn Rpcs.Get_main_page.rpc connection ()))
   in
   print_s [%sexp (response : Rpcs.Get_main_page.Response.t)];
   [%expect
@@ -186,4 +199,104 @@ let%expect_test
       (((content "Newer news") (date 2024-02-20))
        ((content "Older news") (date 2024-02-01))))) |}];
   return ()
+;;
+
+let%expect_test "an anonymous connection cannot write posts" =
+  let%bind () =
+    with_seeded_server ~f:(fun server ->
+      Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
+        let form : Rpcs.Post_form.t =
+          { title = "Sneaky"
+          ; slug = "sneaky"
+          ; content = Language.Map.singleton English "Written by nobody"
+          ; special_post = false
+          }
+        in
+        let%bind created = Rpc.Rpc.dispatch Rpcs.Create_post.rpc connection form in
+        print_s [%sexp (created : Rpcs.Create_post.Response.t Or_error.t)];
+        [%expect {| (Ok Not_logged_in) |}];
+        let%bind updated =
+          Rpc.Rpc.dispatch Rpcs.Update_post.rpc connection { slug = "hello-world"; form }
+        in
+        print_s [%sexp (updated : Rpcs.Update_post.Response.t Or_error.t)];
+        [%expect {| (Ok Not_found) |}];
+        let%map posts =
+          Rpc.Rpc.dispatch_exn
+            Rpcs.Get_post_list.rpc
+            connection
+            { tag_slug = None; limit = None; offset = None }
+        in
+        print_s
+          [%sexp
+            (List.map posts ~f:(fun post -> post.Rpcs.Post_summary.slug) : string list)]))
+  in
+  [%expect {| (hello-world) |}];
+  return ()
+;;
+
+let form : Rpcs.Post_form.t =
+  { title = "First"
+  ; slug = "first"
+  ; content = Language.Map.singleton English "Hello"
+  ; special_post = false
+  }
+;;
+
+let%expect_test "the author creates a post and edits it" =
+  with_seeded_server ~f:(fun server ->
+    let%bind _response, token =
+      Server_test_helpers.login ~username:author.username ~password server
+    in
+    Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+      let%bind created = Rpc.Rpc.dispatch_exn Rpcs.Create_post.rpc connection form in
+      print_s [%sexp (created : Rpcs.Create_post.Response.t)];
+      [%expect {| Saved |}];
+      let%bind () = print_post connection ~slug:"first" in
+      [%expect
+        {|
+        (((title First) (slug first) (content ((English Hello)))
+          (created_at "2026-08-01 00:00:00Z") (tags ()) (special_post false)
+          (hidden false))) |}];
+      let%bind updated =
+        Rpc.Rpc.dispatch_exn
+          Rpcs.Update_post.rpc
+          connection
+          { slug = "first"
+          ; form = { form with title = "First, revised"; slug = "first-revised" }
+          }
+      in
+      print_s [%sexp (updated : Rpcs.Update_post.Response.t)];
+      [%expect {| Saved |}];
+      (* Editing the slug moves the post. *)
+      let%bind () = print_post connection ~slug:"first" in
+      [%expect {| () |}];
+      let%bind () = print_post connection ~slug:"first-revised" in
+      [%expect
+        {|
+        (((title "First, revised") (slug first-revised) (content ((English Hello)))
+          (created_at "2026-08-01 00:00:00Z") (tags ()) (special_post false)
+          (hidden false))) |}];
+      return ()))
+;;
+
+let%expect_test "a slug belongs to one post" =
+  with_seeded_server ~f:(fun server ->
+    let%bind _response, token =
+      Server_test_helpers.login ~username:author.username ~password server
+    in
+    Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+      let taken = { form with slug = "hello-world" } in
+      let%bind created = Rpc.Rpc.dispatch_exn Rpcs.Create_post.rpc connection taken in
+      print_s [%sexp (created : Rpcs.Create_post.Response.t)];
+      [%expect {| Duplicate_slug |}];
+      (* A post keeping its own slug is not a clash with itself. *)
+      let%bind updated =
+        Rpc.Rpc.dispatch_exn
+          Rpcs.Update_post.rpc
+          connection
+          { slug = "hello-world"; form = taken }
+      in
+      print_s [%sexp (updated : Rpcs.Update_post.Response.t)];
+      [%expect {| Saved |}];
+      return ()))
 ;;

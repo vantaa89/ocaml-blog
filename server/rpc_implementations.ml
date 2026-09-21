@@ -80,22 +80,13 @@ let posts_to_summaries db ?query (posts : Database_schema.Post.t list) =
      : Rpcs.Post_summary.t))
 ;;
 
-let visible_to ~viewer (post : Database_schema.Post.t) =
-  match post.hidden with
-  | false -> true
-  | true ->
-    (match viewer with
-     | None -> false
-     | Some user_id -> user_id = post.author_id)
-;;
-
 let find_post db ~slug ~viewer =
   let open Deferred.Or_error.Let_syntax in
   let%bind post = Database.Post.find_by_slug db ~slug in
   match post with
   | None -> return None
   | Some post ->
-    (match visible_to ~viewer post with
+    (match (not post.hidden) || [%equal: int option] viewer (Some post.author_id) with
      | false -> return None
      | true ->
        let%map post = post_to_rpc db post in
@@ -167,22 +158,75 @@ let search db ~query =
     posts_to_summaries db posts ~query
 ;;
 
-(* Only the author may hide or unhide, and a post they cannot see is one they cannot
-   change either. *)
-let set_post_hidden db ~query:({ slug; hidden } : Rpcs.Set_post_hidden.Query.t) ~viewer =
+let set_post_hidden db ~query:({ slug; hidden } : Rpcs.Set_post_hidden.Query.t) ~user_id =
   match%bind.Deferred.Or_error Database.Post.find_by_slug db ~slug with
   | None -> Deferred.Or_error.error_s [%message "No such post" (slug : string)]
   | Some post ->
-    (match
-       visible_to ~viewer post && Option.equal Int.equal viewer (Some post.author_id)
-     with
+    (match [%equal: int option] user_id (Some post.author_id) with
      | false -> Deferred.Or_error.error_s [%message "Not yours to change" (slug : string)]
      | true -> Database.Post.set_hidden db ~id:post.id ~hidden)
 ;;
 
-let current_user db ~session_token =
+let duplicate_slug ?except_id slug ~db =
+  match%map.Deferred.Or_error Database.Post.find_by_slug db ~slug with
+  | None -> false
+  | Some existing ->
+    (match except_id with
+     | None -> true
+     | Some id -> existing.id <> id)
+;;
+
+let create_post db ~(form : Rpcs.Post_form.t) ~user_id ~now =
   let open Deferred.Or_error.Let_syntax in
-  let%bind user_id = Authenticator.current_user_id ~db ~session_token in
+  let open Rpcs.Create_post.Response in
+  match user_id with
+  | None -> return Not_logged_in
+  | Some author_id ->
+    (match%bind duplicate_slug ~db form.slug with
+     | true -> return Duplicate_slug
+     | false ->
+       let%map (_ : Database_schema.Post.t) =
+         Database.Post.create
+           db
+           ~title:form.title
+           ~slug:form.slug
+           ~content_en:(Map.find form.content English)
+           ~content_ko:(Map.find form.content Korean)
+           ~author_id
+           ~special_post:form.special_post
+           ~now
+       in
+       Saved)
+;;
+
+let update_post db ~query:({ slug; form } : Rpcs.Update_post.Query.t) ~user_id =
+  let open Deferred.Or_error.Let_syntax in
+  let open Rpcs.Update_post.Response in
+  match%bind Database.Post.find_by_slug db ~slug with
+  | None -> return Not_found
+  | Some post ->
+    (match [%equal: int option] user_id (Some post.author_id) with
+     | false -> return Not_found
+     | true ->
+       (match%bind duplicate_slug form.slug ~db ~except_id:post.id with
+        | true -> return Duplicate_slug
+        | false ->
+          let%bind () =
+            Database.Post.update
+              db
+              ~id:post.id
+              ~title:form.title
+              ~slug:form.slug
+              ~content_en:(Map.find form.content English)
+              ~content_ko:(Map.find form.content Korean)
+              ~special_post:form.special_post
+          in
+          return Saved))
+;;
+
+let current_user db ~now ~session_token =
+  let open Deferred.Or_error.Let_syntax in
+  let%bind user_id = Authenticator.current_user_id ~db ~now ~session_token in
   let%map user =
     match user_id with
     | None -> return None
@@ -195,10 +239,7 @@ let current_user db ~session_token =
 ;;
 
 module Connection_state = struct
-  type t =
-    { db : Database.t
-    ; session_token : string option
-    }
+  type t = { session_token : string option }
 end
 
 let implement rpc f =
@@ -206,32 +247,40 @@ let implement rpc f =
     f state query >>| ok_exn)
 ;;
 
-let implementations =
+let implementations ~db ~time_source =
   let open Deferred.Or_error.Let_syntax in
+  let current_user_id ~session_token =
+    Authenticator.current_user_id ~db ~now:(Time_source.now time_source) ~session_token
+  in
   Rpc.Implementations.create_exn
     ~on_unknown_rpc:`Close_connection
     ~implementations:
-      [ implement Rpcs.Get_main_page.rpc (fun { db; session_token } () ->
-          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
+      [ implement Rpcs.Get_main_page.rpc (fun { session_token } () ->
+          let%bind viewer = current_user_id ~session_token in
           main_page db ~viewer)
-      ; implement Rpcs.Get_about_page.rpc (fun { db; session_token } () ->
-          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
+      ; implement Rpcs.Get_about_page.rpc (fun { session_token } () ->
+          let%bind viewer = current_user_id ~session_token in
           find_post db ~slug:"about" ~viewer)
-      ; implement Rpcs.Get_post.rpc (fun { db; session_token } { slug } ->
-          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
+      ; implement Rpcs.Get_post.rpc (fun { session_token } { slug } ->
+          let%bind viewer = current_user_id ~session_token in
           find_post db ~slug ~viewer)
-      ; implement Rpcs.Get_post_list.rpc (fun { db; session_token } query ->
-          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
+      ; implement Rpcs.Get_post_list.rpc (fun { session_token } query ->
+          let%bind viewer = current_user_id ~session_token in
           post_list db ~query ~viewer)
-      ; implement Rpcs.Get_tags.rpc (fun { db; session_token = _ } () ->
-          tags_with_counts db)
-      ; implement Rpcs.Search_posts.rpc (fun { db; session_token = _ } { query } ->
-          search db ~query)
-      ; implement Rpcs.Set_post_hidden.rpc (fun { db; session_token } query ->
-          let%bind viewer = Authenticator.current_user_id ~db ~session_token in
-          set_post_hidden db ~query ~viewer)
-      ; implement Rpcs.Get_current_user.rpc (fun { db; session_token } () ->
-          current_user db ~session_token)
+      ; implement Rpcs.Get_tags.rpc (fun _state () -> tags_with_counts db)
+      ; implement Rpcs.Search_posts.rpc (fun _state { query } -> search db ~query)
+      ; implement Rpcs.Set_post_hidden.rpc (fun { session_token } query ->
+          let%bind user_id = current_user_id ~session_token in
+          set_post_hidden db ~query ~user_id)
+      ; implement Rpcs.Create_post.rpc (fun { session_token } form ->
+          let now = Time_source.now time_source in
+          let%bind user_id = Authenticator.current_user_id ~db ~now ~session_token in
+          create_post db ~form ~user_id ~now)
+      ; implement Rpcs.Update_post.rpc (fun { session_token } query ->
+          let%bind user_id = current_user_id ~session_token in
+          update_post db ~query ~user_id)
+      ; implement Rpcs.Get_current_user.rpc (fun { session_token } () ->
+          current_user db ~now:(Time_source.now time_source) ~session_token)
       ; implement Rpcs.Render_markdown.rpc (fun _state { markdown } ->
           Deferred.Or_error.return (Markdown_renderer.render ~markdown))
       ]

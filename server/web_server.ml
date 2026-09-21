@@ -65,7 +65,9 @@ let serve ~time_source db (config : Config.t) =
       | Media { path } -> serve_file ~docroot:config.media_dir ~path
       | Static { path } -> serve_file ~docroot:config.static_dir ~path
       | Index -> serve_file ~docroot:config.static_dir ~path:"index.html"
-      | Login -> Authenticator.login authenticator ~db ~body request
+      | Login ->
+        let now = Time_source.now time_source in
+        Authenticator.login authenticator ~db ~now ~body request
       | Logout -> Authenticator.logout ~db request
       | Not_found -> Server.respond_string ~status:`Not_found "Not found"
     in
@@ -83,14 +85,14 @@ let serve ~time_source db (config : Config.t) =
   in
   Rpc_websocket.Rpc.serve
     ~where_to_listen:(Tcp.Where_to_listen.of_port config.port)
-    ~implementations:Rpc_implementations.implementations
+    ~implementations:(Rpc_implementations.implementations ~db ~time_source)
     ~initial_connection_state:(fun () initiated_from _address _connection ->
       let session_token =
         match (initiated_from : Rpc_websocket.Rpc.Connection_initiated_from.t) with
         | Tcp -> None
         | Websocket_request request -> Authenticator.session_token request
       in
-      ({ db; session_token } : Rpc_implementations.Connection_state.t))
+      { session_token })
     ~http_handler:(http_handler config)
     ~on_handler_error:
       (`Call

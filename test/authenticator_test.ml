@@ -1,19 +1,16 @@
 open! Core
 open! Async
 open! Import
-module Set_cookie_hdr = Cohttp.Cookie.Set_cookie_hdr
 
-(* A rejected login logs its reason, which would otherwise land in the expect output. *)
 let () = Log.Global.set_output []
-let cookie_name = "sessionid"
-let config : Config.t = { Config.default with port = 0 }
+let username = "author"
 
 (* Spaces and an [&] make the round trip through [Uri] encoding part of the test. *)
 let password = "my secret & password"
 
-let user : Database_schema.User.t =
+let author : Database_schema.User.t =
   { id = 1
-  ; username = "author"
+  ; username
   ; email = "author@example.com"
   ; password_hash = Password.hash_exn password
   ; date_joined = Date.of_string "2026-08-01"
@@ -27,59 +24,20 @@ let hidden_post : Database_schema.Post.t =
   ; slug = "draft"
   ; content_en = Some "Not ready yet"
   ; content_ko = None
-  ; author_id = user.id
+  ; author_id = author.id
   ; created_at = Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z"
   ; special_post = false
   ; hidden = true
   }
 ;;
 
-let with_server ~f =
-  let db =
-    Database.For_testing.create_in_memory ~users:[ user ] ~posts:[ hidden_post ] ()
-  in
-  let time_source =
-    Time_source.create ~now:(Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z") ()
-  in
-  let%bind server =
-    Web_server.serve ~time_source:(Time_source.read_only time_source) db config
-  in
-  let port = Cohttp_async.Server.listening_on server in
-  let%bind result = f ~port ~time_source in
-  let%bind () = Cohttp_async.Server.close server in
-  return result
+let with_seeded_server ~f =
+  Server_test_helpers.with_server
+    (Database.For_testing.create_in_memory ~users:[ author ] ~posts:[ hidden_post ] ())
+    ~f
 ;;
 
-(* The [Cookie] header a browser holding [token] would send. *)
-let cookie_header token =
-  Option.map token ~f:(fun token ->
-    Cohttp.Cookie.Cookie_hdr.serialize [ cookie_name, token ])
-  |> Option.to_list
-;;
-
-let post ~port ~path ?origin ?token params =
-  let server = [%string "http://127.0.0.1:%{port#Int}"] in
-  let headers =
-    ("origin", Option.value origin ~default:server) :: cookie_header token
-    |> Cohttp.Header.of_list
-  in
-  (* [post_form] sets the form content type and encodes [params] with the very function
-     the server decodes them with. *)
-  Cohttp_async.Client.post_form
-    ~headers
-    ~params
-    (Uri.of_string [%string "%{server}%{path}"])
-;;
-
-let login ~port = post ~port ~path:Urls.login_path
-let logout ~port ?token () = post ~port ~path:Urls.logout_path ?token []
-
-let credentials ~username ~password =
-  [ "username", [ username ]; "password", [ password ] ]
-;;
-
-let print_response (response, body) =
-  let%map () = Cohttp_async.Body.drain body in
+let print_response response =
   let set_cookie =
     Cohttp.Header.get (Cohttp.Response.headers response) "set-cookie"
     |> Option.map ~f:(fun set_cookie ->
@@ -99,20 +57,10 @@ let print_response (response, body) =
         (set_cookie : string option)]
 ;;
 
-(* Logs in with the right credentials and returns the token the browser would keep. *)
-let start_session ~port =
-  let%bind response, body = login ~port (credentials ~username:"author" ~password) in
-  let%bind () = Cohttp_async.Body.drain body in
-  let set_cookies = Set_cookie_hdr.extract (Cohttp.Response.headers response) in
-  List.Assoc.find_exn set_cookies cookie_name ~equal:String.equal
-  |> Set_cookie_hdr.value
-  |> return
-;;
-
 let%expect_test "a correct password starts a session" =
   let%bind () =
-    with_server ~f:(fun ~port ~time_source:_ ->
-      let%bind response = login ~port (credentials ~username:"author" ~password) in
+    with_seeded_server ~f:(fun server ->
+      let%map response, _token = Server_test_helpers.login ~username ~password server in
       print_response response)
   in
   [%expect
@@ -124,37 +72,36 @@ let%expect_test "a correct password starts a session" =
 ;;
 
 let%expect_test "a wrong password and an unknown user are rejected alike" =
-  with_server ~f:(fun ~port ~time_source:_ ->
-    let%bind response =
-      login ~port (credentials ~username:"author" ~password:"not-the-password")
+  with_seeded_server ~f:(fun server ->
+    let%bind response, _token =
+      Server_test_helpers.login ~username ~password:"not-the-password" server
     in
-    let%bind () = print_response response in
+    print_response response;
     [%expect {| ((status 401) (set_cookie ())) |}];
-    let%bind response = login ~port (credentials ~username:"nobody" ~password) in
-    let%bind () = print_response response in
+    let%bind response, _token =
+      Server_test_helpers.login ~username:"nobody" ~password server
+    in
+    print_response response;
     [%expect {| ((status 401) (set_cookie ())) |}];
     return ())
 ;;
 
 let%expect_test "a form without both fields is a bad request" =
-  with_server ~f:(fun ~port ~time_source:_ ->
-    let%bind response = login ~port [ "username", [ "author" ] ] in
-    let%bind () = print_response response in
+  with_seeded_server ~f:(fun server ->
+    let%bind response, _token = Server_test_helpers.login ~username server in
+    print_response response;
     [%expect {| ((status 400) (set_cookie ())) |}];
-    let%bind response = login ~port [] in
-    let%bind () = print_response response in
+    let%bind response, _token = Server_test_helpers.login server in
+    print_response response;
     [%expect {| ((status 400) (set_cookie ())) |}];
     return ())
 ;;
 
 let%expect_test "a login from another origin is refused" =
   let%bind () =
-    with_server ~f:(fun ~port ~time_source:_ ->
-      let%bind response =
-        login
-          ~port
-          ~origin:"http://evil.example"
-          (credentials ~username:"author" ~password)
+    with_seeded_server ~f:(fun server ->
+      let%map response, _token =
+        Server_test_helpers.login ~origin:"http://evil.example" ~username ~password server
       in
       print_response response)
   in
@@ -163,16 +110,16 @@ let%expect_test "a login from another origin is refused" =
 ;;
 
 let%expect_test "logging out clears the cookie, with or without a session" =
-  with_server ~f:(fun ~port ~time_source:_ ->
-    let%bind token = start_session ~port in
-    let%bind response = logout ~port ~token () in
-    let%bind () = print_response response in
+  with_seeded_server ~f:(fun server ->
+    let%bind _response, token = Server_test_helpers.login ~username ~password server in
+    let%bind response = Server_test_helpers.logout ?token server in
+    print_response response;
     [%expect
       {|
         ((status 204)
          (set_cookie ("sessionid=deleted; Max-Age=0; path=/; secure; httponly"))) |}];
-    let%bind response = logout ~port () in
-    let%bind () = print_response response in
+    let%bind response = Server_test_helpers.logout server in
+    print_response response;
     [%expect
       {|
         ((status 204)
@@ -181,69 +128,54 @@ let%expect_test "logging out clears the cookie, with or without a session" =
 ;;
 
 let%expect_test "the session cookie names the user over RPC, until logout" =
-  with_server ~f:(fun ~port ~time_source:_ ->
+  with_seeded_server ~f:(fun server ->
     let print_current_user ?token () =
-      let headers = cookie_header token |> Cohttp.Header.of_list in
-      let%bind connection =
-        Rpc_websocket.Rpc.client
-          ~headers
-          (Uri.of_string [%string "ws://127.0.0.1:%{port#Int}%{Urls.websocket_path}"])
-        >>| ok_exn
-      in
-      let%bind user = Rpc.Rpc.dispatch_exn Rpcs.Get_current_user.rpc connection () in
-      let%map () = Rpc.Connection.close connection in
-      print_s [%sexp (user : Rpcs.Get_current_user.Response.t)]
+      Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+        let%map user = Rpc.Rpc.dispatch_exn Rpcs.Get_current_user.rpc connection () in
+        print_s [%sexp (user : Rpcs.Get_current_user.Response.t)])
     in
-    let%bind token = start_session ~port in
-    let%bind () = print_current_user ~token () in
+    let%bind _response, token = Server_test_helpers.login ~username ~password server in
+    let%bind () = print_current_user ?token () in
     [%expect {| (Logged_in (username author)) |}];
     (* A connection without the cookie is anonymous. *)
     let%bind () = print_current_user () in
     [%expect {| Not_logged_in |}];
-    let%bind _response, body = logout ~port ~token () in
-    let%bind () = Cohttp_async.Body.drain body in
+    let%bind (_ : Cohttp.Response.t) = Server_test_helpers.logout ?token server in
     (* The same token no longer names a session. *)
-    let%bind () = print_current_user ~token () in
+    let%bind () = print_current_user ?token () in
     [%expect {| Not_logged_in |}];
     return ())
 ;;
 
 let%expect_test "a hidden post is visible only to its author" =
-  with_server ~f:(fun ~port ~time_source:_ ->
+  with_seeded_server ~f:(fun server ->
     let print_draft ?token () =
-      let headers = cookie_header token |> Cohttp.Header.of_list in
-      let%bind connection =
-        Rpc_websocket.Rpc.client
-          ~headers
-          (Uri.of_string [%string "ws://127.0.0.1:%{port#Int}%{Urls.websocket_path}"])
-        >>| ok_exn
-      in
-      let%bind post =
-        Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug = hidden_post.slug }
-      in
-      let%map () = Rpc.Connection.close connection in
-      print_s
-        [%sexp (Option.map post ~f:(fun post -> post.Rpcs.Post.title) : string option)]
+      Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+        let%map post =
+          Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug = hidden_post.slug }
+        in
+        print_s
+          [%sexp (Option.map post ~f:(fun post -> post.Rpcs.Post.title) : string option)])
     in
     (* Knowing the slug is not enough. *)
     let%bind () = print_draft () in
     [%expect {| () |}];
-    let%bind token = start_session ~port in
-    let%bind () = print_draft ~token () in
+    let%bind _response, token = Server_test_helpers.login ~username ~password server in
+    let%bind () = print_draft ?token () in
     [%expect {| (Draft) |}];
     return ())
 ;;
 
 let%expect_test "repeated failures lock a username out" =
-  with_server ~f:(fun ~port ~time_source ->
+  with_seeded_server ~f:(fun server ->
     let wrong_password () =
-      let%bind response =
-        login ~port (credentials ~username:"author" ~password:"not-the-password")
+      let%map response, _token =
+        Server_test_helpers.login ~username ~password:"not-the-password" server
       in
       print_response response
     in
     let%bind () =
-      List.init config.max_login_attempts ~f:Fn.id
+      List.init Config.default.max_login_attempts ~f:Fn.id
       |> Deferred.List.iter ~how:`Sequential ~f:(fun _ -> wrong_password ())
     in
     [%expect
@@ -257,24 +189,24 @@ let%expect_test "repeated failures lock a username out" =
     let%bind () = wrong_password () in
     [%expect {| ((status 429) (set_cookie ())) |}];
     (* Even the right password is turned away while the count stands. *)
-    let%bind response = login ~port (credentials ~username:"author" ~password) in
-    let%bind () = print_response response in
+    let%bind response, _token = Server_test_helpers.login ~username ~password server in
+    print_response response;
     [%expect {| ((status 429) (set_cookie ())) |}];
     (* Another name has its own count. *)
-    let%bind response =
-      login ~port (credentials ~username:"nobody" ~password:"not-the-password")
+    let%bind response, _token =
+      Server_test_helpers.login ~username:"nobody" ~password:"not-the-password" server
     in
-    let%bind () = print_response response in
+    print_response response;
     [%expect {| ((status 401) (set_cookie ())) |}];
     (* Once the failures have aged out of the window, the name is free again. An attempt
        is swept only once it is strictly older than the window, hence the extra second. *)
     let%bind () =
-      Time_source.advance_by_alarms_by
-        time_source
-        Time_ns.Span.(config.login_attempt_window + of_sec 1.)
+      Server_test_helpers.advance_clock
+        server
+        Time_ns.Span.(Config.default.login_attempt_window + of_sec 1.)
     in
-    let%bind response = login ~port (credentials ~username:"author" ~password) in
-    let%bind () = print_response response in
+    let%bind response, _token = Server_test_helpers.login ~username ~password server in
+    print_response response;
     [%expect
       {|
       ((status 204)

@@ -20,9 +20,7 @@ let is_unique rows ~field ~value =
 ;;
 
 let next_id items ~id =
-  match items with
-  | [] -> 1
-  | first :: _ -> id first + 1
+  List.fold items ~init:0 ~f:(fun highest item -> Int.max highest (id item)) + 1
 ;;
 
 let with_connection ~f =
@@ -87,7 +85,7 @@ module Post = struct
 
   (* A hidden post belongs to its author alone. *)
   let visible_to ~viewer (post : Database_schema.Post.t) =
-    (not post.hidden) || Option.equal Int.equal viewer (Some post.author_id)
+    (not post.hidden) || [%equal: int option] viewer (Some post.author_id)
   ;;
 
   let visible_sql ~prefix ~param =
@@ -231,7 +229,7 @@ module Post = struct
           [%string "UPDATE %{Database_schema.Post.table} SET hidden = $1 WHERE id = $2"])
   ;;
 
-  let create t ~title ~slug ~content_en ~content_ko ~author_id ~special_post =
+  let create t ~title ~slug ~content_en ~content_ko ~author_id ~special_post ~now =
     match t with
     | Mock { posts; _ } ->
       (match is_unique !posts ~field:(fun post -> post.slug) ~value:slug with
@@ -247,7 +245,7 @@ module Post = struct
            ; content_en
            ; content_ko
            ; author_id
-           ; created_at = Time_ns.now ()
+           ; created_at = now
            ; special_post
            ; hidden = false
            }
@@ -257,7 +255,6 @@ module Post = struct
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
         let module Value = Pgx_async.Value in
-        let created_at = Time_ns.now () in
         let hidden = false in
         let params =
           [ Value.of_string title
@@ -265,7 +262,7 @@ module Post = struct
           ; Value.opt Value.of_string content_en
           ; Value.opt Value.of_string content_ko
           ; Value.of_int author_id
-          ; Database_schema.value_of_time_ns created_at
+          ; Database_schema.value_of_time_ns now
           ; Value.of_bool special_post
           ; Value.of_bool hidden
           ]
@@ -290,7 +287,7 @@ module Post = struct
            ; content_en
            ; content_ko
            ; author_id
-           ; created_at
+           ; created_at = now
            ; special_post
            ; hidden
            }
@@ -924,8 +921,7 @@ module Session = struct
           [%string "DELETE FROM %{Database_schema.Session.table} WHERE token_hash = $1"])
   ;;
 
-  let delete_expired t =
-    let now = Time_ns.now () in
+  let delete_expired t ~now =
     match t with
     | Mock { sessions; _ } ->
       sessions

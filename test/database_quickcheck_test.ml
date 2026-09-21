@@ -41,10 +41,6 @@ module Test_token = struct
   ;;
 end
 
-(* Session expiry is expressed relative to a [now] captured once per program, so that both
-   sides agree on the value even though each side runs the op at a slightly different
-   time. A whole day of slack keeps [delete_expired]'s own [Time_ns.now ()] on the
-   intended side of the boundary. *)
 module Test_expiry = struct
   type t =
     | Expired
@@ -302,6 +298,9 @@ let run_op (side : Side.t) (op : Op.t) =
           ~content_ko
           ~author_id:side.author_id
           ~special_post
+          ~now:
+            (* Posts are listed newest first, and Postgres leaves ties in any order. *)
+            (Time_ns.add side.now (Time_ns.Span.of_int_sec (Queue.length side.posts)))
       in
       Queue.enqueue side.posts post.id;
       Response.Post (Some (Side.post_ref side post))
@@ -434,7 +433,7 @@ let run_op (side : Side.t) (op : Op.t) =
       in
       Response.Unit
     | Delete_expired_sessions ->
-      let%map () = Database.Session.delete_expired side.db in
+      let%map () = Database.Session.delete_expired side.db ~now:side.now in
       Response.Unit
   in
   match result with
@@ -476,15 +475,7 @@ let%test_unit "Real and Mock databases are observationally equivalent" =
       ~sexp_of:[%sexp_of: Op.t list]
       program_generator
       ~f:(fun ops ->
-        (* Truncated to a whole second: Postgres [TIMESTAMPTZ] only keeps microseconds, so
-           a nanosecond-precision [now] would not round-trip. *)
-        let now =
-          Time_ns.now ()
-          |> Time_ns.to_span_since_epoch
-          |> Time_ns.Span.to_int_sec
-          |> Time_ns.Span.of_int_sec
-          |> Time_ns.of_span_since_epoch
-        in
+        let now = Time_ns.of_string_with_utc_offset "2024-01-01 00:00:00Z" in
         Database.For_testing.with_test_connection ~f:(fun real_db ->
           let%bind () = Database.create_tables real_db >>| ok_exn in
           let%bind real = Side.create real_db ~now in
