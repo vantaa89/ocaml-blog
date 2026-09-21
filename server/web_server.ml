@@ -18,7 +18,7 @@ module Http_route = struct
   let of_request ~(meth : Cohttp.Code.meth) ~path : t =
     let segments = String.split path ~on:'/' |> List.filter ~f:(Fn.non String.is_empty) in
     match meth with
-    | `GET ->
+    | `GET | `HEAD ->
       (match segments with
        | [] -> Index
        | prefix :: rest ->
@@ -70,7 +70,12 @@ let serve ~time_source db (config : Config.t) =
       | Not_found -> Server.respond_string ~status:`Not_found "Not found"
     in
     match meth with
-    | `GET | `HEAD -> dispatch ()
+    | `GET -> dispatch ()
+    | `HEAD ->
+      let%bind response, body = dispatch () in
+      let%map () = Cohttp_async.Body.drain body in
+      (* [encoding] specifies how the recipient knows the end of the body *)
+      { response with encoding = Fixed 0L }, Cohttp_async.Body.empty
     | `POST | `PUT | `PATCH | `DELETE | `CONNECT | `OPTIONS | `TRACE | `Other _ ->
       (* A status-changing method should be checked for same-origin. [`GET] and [`HEAD]
          are exempt because browsers omit [Origin] on ordinary navigations. *)
