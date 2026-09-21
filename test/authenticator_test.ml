@@ -6,15 +6,7 @@ module Set_cookie_hdr = Cohttp.Cookie.Set_cookie_hdr
 (* A rejected login logs its reason, which would otherwise land in the expect output. *)
 let () = Log.Global.set_output []
 let cookie_name = "sessionid"
-
-let config : Config.t =
-  { port = 0
-  ; static_dir = "static"
-  ; media_dir = "media"
-  ; max_login_attempts = 5
-  ; login_attempt_window = Time_ns.Span.of_min 15.
-  }
-;;
+let config : Config.t = { Config.default with port = 0 }
 
 (* Spaces and an [&] make the round trip through [Uri] encoding part of the test. *)
 let password = "my secret & password"

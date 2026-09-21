@@ -109,7 +109,8 @@ let%expect_test "a rejected attempt does not extend the lockout" =
 let%expect_test "[clear] forgets a key's attempts" =
   with_limiter ~f:(fun t ~advance:_ ->
     List.init max_attempts ~f:Fn.id |> List.iter ~f:(fun _ -> attempt t ~key:"author");
-    [%expect {|
+    [%expect
+      {|
       Allowed
       Allowed
       Allowed |}];
