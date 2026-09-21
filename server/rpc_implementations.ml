@@ -281,7 +281,5 @@ let implementations ~db ~time_source =
           update_post db ~query ~user_id)
       ; implement Rpcs.Get_current_user.rpc (fun { session_token } () ->
           current_user db ~now:(Time_source.now time_source) ~session_token)
-      ; implement Rpcs.Render_markdown.rpc (fun _state { markdown } ->
-          Deferred.Or_error.return (Markdown_renderer.render ~markdown))
       ]
 ;;

@@ -267,21 +267,3 @@ module Get_current_user = struct
       ~bin_response:Response.bin_t
   ;;
 end
-
-module Render_markdown = struct
-  module Query = struct
-    type t = { markdown : string } [@@deriving bin_io, sexp, equal]
-  end
-
-  module Response = struct
-    type t = string [@@deriving bin_io, sexp, equal]
-  end
-
-  let rpc =
-    Rpc.Rpc.create
-      ~name:"render-markdown"
-      ~version:0
-      ~bin_query:Query.bin_t
-      ~bin_response:Response.bin_t
-  ;;
-end

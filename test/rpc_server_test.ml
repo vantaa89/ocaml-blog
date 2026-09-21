@@ -117,18 +117,6 @@ let%expect_test "search centers the excerpt on the match and ignores short queri
       return ()))
 ;;
 
-let%expect_test "markdown is rendered server-side" =
-  with_seeded_server ~f:(fun server ->
-    Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
-      let%bind html =
-        Rpc.Rpc.dispatch_exn Rpcs.Render_markdown.rpc connection { markdown = "# Title" }
-      in
-      print_endline html;
-      [%expect
-        {| <h1 id="title"><a class="anchor" aria-hidden="true" href="#title"></a>Title</h1> |}];
-      return ()))
-;;
-
 let%expect_test
     "the main page shows the [main] post, the four newest ordinary posts, visible \
      publications and news"
