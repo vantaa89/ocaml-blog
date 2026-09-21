@@ -118,6 +118,8 @@ let component =
     | Home -> Pages.home
     | About -> Pages.about
     | Post { slug } -> Pages.post_detail ~slug
+    | New_post -> Editor.new_post
+    | Edit_post { slug } -> Editor.edit_post ~slug
     | Posts { tag_slug; page } -> Pages.posts ~tag_slug ~page
     | Search { query; page } -> Pages.search ~query ~page
     | Login -> Login_page.component

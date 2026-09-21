@@ -8,6 +8,8 @@ type t =
       ; page : int
       }
   | Post of { slug : string }
+  | New_post
+  | Edit_post of { slug : string }
   | About
   | Search of
       { query : string
@@ -46,6 +48,8 @@ let parse_exn (components : Bonsai_web_ui_url_var.Components.t) : t =
     in
     Posts { tag_slug; page }
   | [ "post"; slug ] -> Post { slug }
+  | [ "post"; slug; "edit" ] -> Edit_post { slug }
+  | [ "new-post" ] -> New_post
   | [ "login" ] -> Login
   | [ "search"; query ] -> Search { query; page }
   | _ -> Home
@@ -66,6 +70,8 @@ let unparse (t : t) : Bonsai_web_ui_url_var.Components.t =
   | About -> create "about"
   | Login -> create "login"
   | Post { slug } -> create [%string "post/%{Uri.pct_encode slug}"]
+  | New_post -> create "new-post"
+  | Edit_post { slug } -> create [%string "post/%{Uri.pct_encode slug}/edit"]
   | Posts { tag_slug; page } ->
     let query =
       query_of_alist
@@ -91,7 +97,7 @@ let with_page t page =
   match t with
   | Posts { tag_slug; page = _ } -> Posts { tag_slug; page }
   | Search { query; page = _ } -> Search { query; page }
-  | (Home | About | Post _ | Login) as t -> t
+  | (Home | About | Post _ | New_post | Edit_post _ | Login) as t -> t
 ;;
 
 let title = function
@@ -99,6 +105,8 @@ let title = function
   | Posts { tag_slug = None; _ } -> "Posts"
   | Posts { tag_slug = Some tag_slug; _ } -> [%string "tag: %{tag_slug}"]
   | Post { slug } -> slug
+  | New_post -> "new post"
+  | Edit_post { slug } -> [%string "edit: %{slug}"]
   | About -> "about"
   | Search { query; _ } -> [%string "search: %{query}"]
   | Login -> "login"

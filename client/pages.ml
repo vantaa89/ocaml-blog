@@ -227,7 +227,17 @@ let sidebar_node tags =
 
 (** The shared body of [posts.html]: heading, optional match count, post cards,
     paginator and the tag sidebar. *)
-let post_list_node ~heading ~match_count ~posts ~tags ~route ~page ~num_pages =
+let post_list_node
+      ?(author_actions = Vdom.Node.none)
+      ~heading
+      ~match_count
+      ~posts
+      ~tags
+      ~route
+      ~page
+      ~num_pages
+      ()
+  =
   Vdom.Node.div
     ~attrs:[ Vdom.Attr.classes [ "custom-container"; "my-3" ] ]
     [ Vdom.Node.h1 [ Vdom.Node.text heading ]
@@ -242,6 +252,7 @@ let post_list_node ~heading ~match_count ~posts ~tags ~route ~page ~num_pages =
         (List.concat_map posts ~f:(fun post ->
            [ Client_utils.post_card post; Vdom.Node.hr () ]))
     ; Client_utils.paginator ~route ~page ~num_pages
+    ; author_actions
     ; sidebar_node tags
     ]
 ;;
@@ -274,10 +285,12 @@ let posts ~tag_slug ~page =
       ~retry_interval:Rpc_client.retry_interval
       (Value.return ())
   in
+  let%sub current_user = Session.current_user in
   let%arr posts_poll = posts_poll
   and tags_poll = tags_poll
   and tag_slug = tag_slug
-  and page = page in
+  and page = page
+  and current_user = current_user in
   Client_utils.of_poll posts_poll ~f:(fun fetched ->
     let tags =
       match tags_poll.last_ok_response with
@@ -301,14 +314,28 @@ let posts ~tag_slug ~page =
         in
         [%string "tag: %{tag_slug}"], count
     in
+    let author_actions =
+      match current_user with
+      | Not_logged_in -> Vdom.Node.none
+      | Logged_in _ ->
+        Vdom.Node.div
+          ~attrs:[ Vdom.Attr.class_ "author-actions" ]
+          [ Client_utils.link
+              ~attrs:[ Vdom.Attr.class_ "new-post-button" ]
+              New_post
+              [ Vdom.Node.text "New post" ]
+          ]
+    in
     post_list_node
+      ~author_actions
       ~heading
       ~match_count
       ~posts
       ~tags
       ~route:(Route.Posts { tag_slug; page })
       ~page
-      ~num_pages)
+      ~num_pages
+      ())
 ;;
 
 let search ~query ~page =
@@ -355,7 +382,8 @@ let search ~query ~page =
       ~tags
       ~route:(Route.Search { query; page })
       ~page
-      ~num_pages)
+      ~num_pages
+      ())
 ;;
 
 (***** post detail *****)
@@ -448,6 +476,11 @@ let post_detail ~slug =
                      | true -> "unhide"
                      | false -> "hide")
                 ]
+            ; Vdom.Node.text " · "
+            ; Client_utils.link
+                ~attrs:[ Vdom.Attr.class_ "author-action" ]
+                (Edit_post { slug })
+                [ Vdom.Node.text "edit" ]
             ]
         in
         Vdom.Node.p

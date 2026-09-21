@@ -11,6 +11,8 @@ type t =
       ; page : int
       }
   | Post of { slug : string }
+  | New_post
+  | Edit_post of { slug : string }
   | About
   | Search of
       { query : string
