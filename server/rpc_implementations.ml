@@ -202,26 +202,29 @@ let create_post db ~(form : Rpcs.Post_form.t) ~user_id ~now =
 let update_post db ~query:({ slug; form } : Rpcs.Update_post.Query.t) ~user_id =
   let open Deferred.Or_error.Let_syntax in
   let open Rpcs.Update_post.Response in
-  match%bind Database.Post.find_by_slug db ~slug with
-  | None -> return Not_found
-  | Some post ->
-    (match [%equal: int option] user_id (Some post.author_id) with
-     | false -> return Not_found
-     | true ->
-       (match%bind duplicate_slug form.slug ~db ~except_id:post.id with
-        | true -> return Duplicate_slug
-        | false ->
-          let%bind () =
-            Database.Post.update
-              db
-              ~id:post.id
-              ~title:form.title
-              ~slug:form.slug
-              ~content_en:(Map.find form.content English)
-              ~content_ko:(Map.find form.content Korean)
-              ~special_post:form.special_post
-          in
-          return Saved))
+  match user_id with
+  | None -> return Not_logged_in
+  | Some user_id ->
+    (match%bind Database.Post.find_by_slug db ~slug with
+     | None -> return Not_found
+     | Some post ->
+       (match post.author_id = user_id with
+        | false -> return Not_found
+        | true ->
+          (match%bind duplicate_slug form.slug ~db ~except_id:post.id with
+           | true -> return Duplicate_slug
+           | false ->
+             let%bind () =
+               Database.Post.update
+                 db
+                 ~id:post.id
+                 ~title:form.title
+                 ~slug:form.slug
+                 ~content_en:(Map.find form.content English)
+                 ~content_ko:(Map.find form.content Korean)
+                 ~special_post:form.special_post
+             in
+             return Saved)))
 ;;
 
 let current_user db ~now ~session_token =

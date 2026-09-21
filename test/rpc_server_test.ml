@@ -207,7 +207,7 @@ let%expect_test "an anonymous connection cannot write posts" =
           Rpc.Rpc.dispatch Rpcs.Update_post.rpc connection { slug = "hello-world"; form }
         in
         print_s [%sexp (updated : Rpcs.Update_post.Response.t Or_error.t)];
-        [%expect {| (Ok Not_found) |}];
+        [%expect {| (Ok Not_logged_in) |}];
         let%map posts =
           Rpc.Rpc.dispatch_exn
             Rpcs.Get_post_list.rpc
