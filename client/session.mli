@@ -5,7 +5,12 @@ open! Import
     the session token lands in an [HttpOnly] cookie that page scripts cannot read. *)
 
 val reload_home : unit -> unit Effect.t
-val log_in : username:string -> password:string -> unit Or_error.t Effect.t
+
+val log_in
+  :  username:string
+  -> password:string
+  -> [ `Logged_in | `Rejected | `Too_many_attempts | `Failed of Error.t ] Effect.t
+
 val log_out : unit -> unit Or_error.t Effect.t
 
 (** Who the server says this connection belongs to. Reads as [Not_logged_in] until the

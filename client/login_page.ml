@@ -6,18 +6,18 @@ module Model = struct
   type t =
     { username : string
     ; password : string
-    ; rejected : bool
+    ; error : string option
     }
   [@@deriving sexp, equal]
 
-  let empty = { username = ""; password = ""; rejected = false }
+  let empty = { username = ""; password = ""; error = None }
 end
 
 module Action = struct
   type t =
     | Set_username of string
     | Set_password of string
-    | Rejected
+    | Failed of string
   [@@deriving sexp_of]
 end
 
@@ -48,9 +48,9 @@ let component =
       ~default_model:Model.empty
       ~apply_action:(fun ~inject:_ ~schedule_event:_ model action ->
         match action with
-        | Set_username username -> { model with username; rejected = false }
-        | Set_password password -> { model with password; rejected = false }
-        | Rejected -> { model with rejected = true })
+        | Set_username username -> { model with username; error = None }
+        | Set_password password -> { model with password; error = None }
+        | Failed error -> { model with error = Some error })
   in
   let%arr model = model
   and inject = inject in
@@ -58,8 +58,11 @@ let component =
     match%bind.Effect
       Session.log_in ~username:model.username ~password:model.password
     with
-    | Ok () -> Session.reload_home ()
-    | Error (_ : Error.t) -> inject Rejected
+    | `Logged_in -> Session.reload_home ()
+    | `Rejected -> inject (Failed "Invalid username or password")
+    | `Too_many_attempts ->
+      inject (Failed "Too many login attempts. Please try again later.")
+    | `Failed (_ : Error.t) -> inject (Failed "Could not log in. Please try again.")
   in
   Vdom.Node.div
     ~attrs:[ Vdom.Attr.classes [ "container"; "custom-container"; "py-3" ] ]
@@ -81,12 +84,12 @@ let component =
             ~type_:"password"
             ~value:model.password
             ~on_input:(fun password -> inject (Set_password password))
-        ; (match model.rejected with
-           | false -> Vdom.Node.none
-           | true ->
+        ; (match model.error with
+           | None -> Vdom.Node.none
+           | Some error ->
              Vdom.Node.div
                ~attrs:[ Vdom.Attr.classes [ "alert"; "alert-danger" ] ]
-               [ Vdom.Node.text "Invalid username or password" ])
+               [ Vdom.Node.text error ])
         ; Vdom.Node.button
             ~attrs:
               [ Vdom.Attr.type_ "submit"; Vdom.Attr.classes [ "btn"; "btn-primary" ] ]
