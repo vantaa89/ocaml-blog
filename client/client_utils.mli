@@ -10,7 +10,7 @@ val read_time : string -> string
 (** [Rpcs.Post.content] maps each language to its markdown; English is the default. *)
 val primary_content : string Map.M(Language).t -> string option
 
-(** Number of posts shown per page, matching Django's [paginate_by]. *)
+(** Number of posts shown per page. *)
 val page_size : int
 
 (** The slice of [items] belonging to the given one-based page. *)
@@ -22,7 +22,7 @@ val link : ?attrs:Vdom.Attr.t list -> Route.t -> Vdom.Node.t list -> Vdom.Node.t
 
 val tag_node : string -> Vdom.Node.t
 
-(** The [post-card] block shared by [index.html] and [posts.html]. *)
+(** A post's card, as listed on the home page and on the post list pages. *)
 val post_card : Rpcs.Post_summary.t -> Vdom.Node.t
 
 val not_found_node : Vdom.Node.t

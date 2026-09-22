@@ -169,7 +169,7 @@ let%expect_test
         [ { id = 1
           ; title = "A paper"
           ; image_id = 1
-          ; authors = "Your Name"
+          ; authors = "An author"
           ; journal = "A journal"
           ; link = Some "https://example.com/paper"
           ; hidden = false
@@ -177,7 +177,7 @@ let%expect_test
         ; { id = 2
           ; title = "A retracted paper"
           ; image_id = 1
-          ; authors = "Your Name"
+          ; authors = "An author"
           ; journal = "A journal"
           ; link = None
           ; hidden = true
@@ -213,7 +213,7 @@ let%expect_test
         (created_at "2026-08-04 15:00:00Z") (tags ()) (languages (English)))))
      (publications
       (((title "A paper") (image_url /media/2024-01-15/paper.png)
-        (authors "Your Name") (journal "A journal")
+        (authors "An author") (journal "A journal")
         (link (https://example.com/paper)))))
      (news
       (((content "Newer news") (date 2024-02-20))

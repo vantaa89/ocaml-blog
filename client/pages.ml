@@ -225,7 +225,7 @@ let sidebar_node tags =
     ]
 ;;
 
-(** The shared body of [posts.html]: heading, optional match count, post cards,
+(** The shared body of the post list pages: heading, optional match count, post cards,
     paginator and the tag sidebar. *)
 let post_list_node
       ?(author_actions = Vdom.Node.none)

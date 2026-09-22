@@ -3,7 +3,6 @@ open! Import
 
 let words_per_minute = 150
 
-(** Django renders dates with its default ["N j, Y"] format, e.g. ["May 1, 2024"]. *)
 let format_date date =
   let month = Date.month date |> Month.to_string in
   let day = Date.day date in
@@ -194,7 +193,6 @@ let primary_content (content : string Map.M(Language).t) =
   | None -> Map.data content |> List.hd
 ;;
 
-(** Number of posts shown per page, matching Django's [paginate_by]. *)
 let page_size = 10
 
 let paginate items ~page =
