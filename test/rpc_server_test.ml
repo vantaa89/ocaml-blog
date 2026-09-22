@@ -288,3 +288,63 @@ let%expect_test "a slug belongs to one post" =
       [%expect {| Saved |}];
       return ()))
 ;;
+
+let png = "\x89PNG\r\n\x1a\nnot really an image"
+
+let print_upload connection contents =
+  let%map response = Rpc.Rpc.dispatch_exn Rpcs.Upload_image.rpc connection { contents } in
+  print_s [%sexp (response : Rpcs.Upload_image.Response.t)]
+;;
+
+let print_media server ~path ~content =
+  let%map response, body = Server_test_helpers.get server ~path in
+  print_s
+    [%sexp
+      (Cohttp.Response.status response : Cohttp.Code.status_code)
+    , (Cohttp.Header.get (Cohttp.Response.headers response) "content-type"
+       : string option)
+    , (String.equal body content : bool)]
+;;
+
+let%expect_test "an anonymous connection cannot upload images" =
+  with_seeded_server ~f:(fun server ->
+    let%bind () =
+      Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
+        print_upload connection png)
+    in
+    [%expect {| Not_logged_in |}];
+    return ())
+;;
+
+let%expect_test "an uploaded image is named after its contents and served" =
+  with_seeded_server ~f:(fun server ->
+    let%bind _response, token =
+      Server_test_helpers.login ~username:author.username ~password server
+    in
+    let%bind () =
+      Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+        let%bind () = print_upload connection png in
+        [%expect {| (Uploaded (url /media/2026-08-01/a987c0d1fac0abc3.png)) |}];
+        (* The same image again on the same day overwrites the same file. *)
+        let%bind () = print_upload connection png in
+        [%expect {| (Uploaded (url /media/2026-08-01/a987c0d1fac0abc3.png)) |}];
+        let%bind () = print_upload connection "GIF89a" in
+        [%expect {| (Uploaded (url /media/2026-08-01/610f5ae4d76e3326.gif)) |}];
+        let%bind () = print_upload connection "<svg></svg>" in
+        [%expect {| Unsupported_format |}];
+        let%bind () =
+          print_upload connection (png ^ String.make Rpcs.Upload_image.max_size ' ')
+        in
+        [%expect {| Too_large |}];
+        return ())
+    in
+    let%bind () =
+      print_media server ~path:"/media/2026-08-01/a987c0d1fac0abc3.png" ~content:png
+    in
+    [%expect {| (OK (image/png) true) |}];
+    let%bind () =
+      print_media server ~path:"/media/2026-08-01/610f5ae4d76e3326.gif" ~content:"GIF89a"
+    in
+    [%expect {| (OK (image/gif) true) |}];
+    return ())
+;;

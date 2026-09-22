@@ -666,7 +666,9 @@ module Post_tag = struct
           | false -> None)
         |> Int.Set.of_list
       in
-      List.filter !tags ~f:(fun tag -> Set.mem tag_ids tag.id) |> Deferred.Or_error.return
+      List.filter !tags ~f:(fun tag -> Set.mem tag_ids tag.id)
+      |> List.sort ~compare:(fun a b -> Int.compare a.id b.id)
+      |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
         let module Value = Pgx_async.Value in
@@ -679,7 +681,8 @@ module Post_tag = struct
               "SELECT %{columns} FROM %{Database_schema.Tag.table} JOIN \
                %{Database_schema.Post_tag.table} ON %{Database_schema.Tag.table}.id = \
                %{Database_schema.Post_tag.table}.tag_id WHERE \
-               %{Database_schema.Post_tag.table}.post_id = $1"]
+               %{Database_schema.Post_tag.table}.post_id = $1 ORDER BY \
+               %{Database_schema.Tag.table}.id"]
         in
         List.map rows ~f:Database_schema.Tag.of_row)
   ;;

@@ -24,10 +24,18 @@ module Model = struct
     ; slug_edited : bool
     ; language : Language.t option
     ; status : Status.t
+    ; uploading : bool
     }
   [@@deriving sexp, equal]
 
-  let default = { form = None; slug_edited = false; language = None; status = Editing }
+  let default =
+    { form = None
+    ; slug_edited = false
+    ; language = None
+    ; status = Editing
+    ; uploading = false
+    }
+  ;;
 end
 
 module Action = struct
@@ -38,6 +46,7 @@ module Action = struct
     | Set_special_post of bool
     | Select_language of Language.t
     | Set_status of Status.t
+    | Set_uploading of bool
     | Reset
   [@@deriving sexp_of]
 end
@@ -85,6 +94,7 @@ let apply_action
   =
   match input, action with
   | _, Reset -> Model.default
+  | _, Set_uploading uploading -> { model with uploading }
   | Inactive, _ -> model
   | Active (mode, initial), action ->
     let form = current_form model ~initial in
@@ -116,6 +126,7 @@ let apply_action
      | Set_special_post special_post -> edit { form with special_post }
      | Select_language language -> { model with language = Some language }
      | Set_status status -> { model with status }
+     | Set_uploading uploading -> { model with uploading }
      | Reset -> Model.default)
 ;;
 
@@ -134,6 +145,18 @@ let problem (form : Rpcs.Post_form.t) =
 let unreachable = "Could not reach the server. Please try again."
 let expired = "Your session has expired. Log in again, then save."
 let duplicate_slug = "Another post already uses this slug."
+
+let upload_failure_message : Image_upload.Failure.t -> string = function
+  | Too_large ->
+    let megabytes = Rpcs.Upload_image.max_size / 1024 / 1024 in
+    [%string "An image can be at most %{megabytes#Int} MB."]
+  | Unsupported_format -> "Only PNG, JPEG, GIF and WebP images can be uploaded."
+  | Unreadable { name } -> [%string "Could not read %{name}."]
+  | Not_logged_in -> "Your session has expired. Log in again, then upload."
+  | Unreachable -> unreachable
+;;
+
+let textarea_id = "editor-input"
 let go_back = Effect.of_sync_fun (fun () -> Js_of_ocaml.Dom_html.window##.history##back)
 
 let language_toggle ~(language : Language.t) ~inject =
@@ -162,6 +185,7 @@ let view
       ~(language : Language.t)
       ~preview
       ~save
+      ~upload
       ~inject
   =
   let text = Map.find form.content language |> Option.value ~default:"" in
@@ -217,6 +241,7 @@ let view
                     ()
                 ; Vdom.Node.text "special post"
                 ]
+            ; Image_upload.button ~uploading:model.uploading ~upload
             ; Vdom.Node.div
                 ~attrs:[ Vdom.Attr.class_ "editor-actions" ]
                 [ language_toggle ~language ~inject ]
@@ -230,6 +255,7 @@ let view
         ; Vdom.Node.textarea
             ~attrs:
               [ Vdom.Attr.class_ "editor-input"
+              ; Vdom.Attr.id textarea_id
               ; Vdom.Attr.placeholder
                   (match language with
                    | English -> "Write in English (markdown)"
@@ -237,6 +263,7 @@ let view
               ; Vdom.Attr.create "spellcheck" "false"
               ; Vdom.Attr.value_prop text
               ; Vdom.Attr.on_input (fun _ text -> inject (Action.Set_content text))
+              ; Image_upload.drop_target ~upload
               ]
             []
         ; Vdom.Node.div
@@ -315,6 +342,11 @@ let editor ~(mode : Mode.t Value.t) ~(initial : Rpcs.Post_form.t Value.t) =
       Rpcs.Update_post.rpc
       ~where_to_connect:Rpc_client.where_to_connect
   in
+  let%sub upload_image =
+    Rpc_effect.Rpc.dispatcher
+      Rpcs.Upload_image.rpc
+      ~where_to_connect:Rpc_client.where_to_connect
+  in
   let%arr model = model
   and inject = inject
   and form = form
@@ -322,7 +354,8 @@ let editor ~(mode : Mode.t Value.t) ~(initial : Rpcs.Post_form.t Value.t) =
   and preview = preview
   and mode = mode
   and create_post = create_post
-  and update_post = update_post in
+  and update_post = update_post
+  and upload_image = upload_image in
   let submit : (unit, string) Result.t Effect.t =
     match mode with
     | New ->
@@ -353,7 +386,31 @@ let editor ~(mode : Mode.t Value.t) ~(initial : Rpcs.Post_form.t Value.t) =
          Navigation.go_to (Post { slug = form.slug })
        | Error message -> inject (Set_status (Failed message)))
   in
-  view ~model ~form ~language ~preview ~save ~inject
+  let upload files =
+    match model.uploading with
+    | true -> Effect.Ignore
+    | false ->
+      let%bind.Effect () = inject (Set_uploading true) in
+      let%bind.Effect results =
+        Effect.all (List.map files ~f:(Image_upload.upload ~dispatch:upload_image))
+      in
+      let urls, failures = List.partition_result results in
+      let%bind.Effect () =
+        match urls with
+        | [] -> Effect.Ignore
+        | urls ->
+          (match%bind.Effect Image_upload.insert ~textarea_id ~urls with
+           | None -> Effect.Ignore
+           | Some text -> inject (Set_content text))
+      in
+      let%bind.Effect () =
+        match failures with
+        | [] -> Effect.Ignore
+        | failure :: _ -> inject (Set_status (Failed (upload_failure_message failure)))
+      in
+      inject (Set_uploading false)
+  in
+  view ~model ~form ~language ~preview ~save ~upload ~inject
 ;;
 
 let for_author page =

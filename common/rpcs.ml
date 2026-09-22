@@ -267,3 +267,28 @@ module Get_current_user = struct
       ~bin_response:Response.bin_t
   ;;
 end
+
+module Upload_image = struct
+  let max_size = 5 * 1024 * 1024
+
+  module Query = struct
+    type t = { contents : string } [@@deriving bin_io]
+  end
+
+  module Response = struct
+    type t =
+      | Uploaded of { url : string }
+      | Not_logged_in
+      | Too_large
+      | Unsupported_format
+    [@@deriving bin_io, sexp_of]
+  end
+
+  let rpc =
+    Rpc.Rpc.create
+      ~name:"upload-image"
+      ~version:0
+      ~bin_query:Query.bin_t
+      ~bin_response:Response.bin_t
+  ;;
+end

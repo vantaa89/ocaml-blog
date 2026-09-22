@@ -13,14 +13,18 @@ let with_server db ~f =
   let time_source =
     Time_source.create ~now:(Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z") ()
   in
+  let media_dir = Filename_unix.temp_dir "media" "" in
   let%bind server =
     Web_server.serve
       ~time_source:(Time_source.read_only time_source)
       db
-      { Config.default with port = 0 }
+      { Config.default with port = 0; media_dir }
   in
   let%bind result = f { port = Cohttp_async.Server.listening_on server; time_source } in
   let%bind () = Cohttp_async.Server.close server in
+  let%bind () =
+    Process.run_expect_no_output_exn ~prog:"rm" ~args:[ "-rf"; media_dir ] ()
+  in
   return result
 ;;
 
@@ -69,6 +73,15 @@ let login ?origin ?username ?password t =
 ;;
 
 let logout ?token t = post ?token t ~path:Urls.logout_path []
+
+let get t ~path =
+  let%bind response, body =
+    Cohttp_async.Client.get
+      (Uri.of_string [%string "http://127.0.0.1:%{t.port#Int}%{path}"])
+  in
+  let%map body = Cohttp_async.Body.to_string body in
+  response, body
+;;
 
 let with_rpc_connection ?token t ~f =
   let headers = cookie_header token |> Cohttp.Header.of_list in

@@ -1125,3 +1125,31 @@ body:has(.editor) {
     color: white;
     filter: brightness(1.1);
 }
+
+/* The editor's [Insert image] button: an icon labelling a hidden file input. */
+
+.editor-image-button {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+}
+
+.editor-image-button:hover {
+    opacity: 1;
+}
+
+.editor-image-button.uploading {
+    cursor: progress;
+    opacity: 0.4;
+}
+
+.editor-image-button img {
+    width: 20px;
+    height: 20px;
+}
+
+.editor-image-button input {
+    display: none;
+}

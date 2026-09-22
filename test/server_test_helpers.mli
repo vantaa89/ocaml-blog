@@ -20,6 +20,7 @@ val login
   -> (Cohttp.Response.t * string option) Deferred.t
 
 val logout : ?token:string -> t -> Cohttp.Response.t Deferred.t
+val get : t -> path:string -> (Cohttp.Response.t * string) Deferred.t
 
 val with_rpc_connection
   :  ?token:string

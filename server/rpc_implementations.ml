@@ -227,6 +227,20 @@ let update_post db ~query:({ slug; form } : Rpcs.Update_post.Query.t) ~user_id =
              return Saved)))
 ;;
 
+let upload_image db ~media_dir ~date ~contents ~user_id =
+  let open Deferred.Or_error.Let_syntax in
+  let open Rpcs.Upload_image.Response in
+  match user_id with
+  | None -> return Not_logged_in
+  | Some _ ->
+    (match%bind Image_store.save ~media_dir ~date ~content:contents with
+     | `Too_large -> return Too_large
+     | `Unsupported_format -> return Unsupported_format
+     | `Saved_as filename ->
+       let%map image = Database.Image.create db ~filename ~date in
+       Uploaded { url = Database_schema.Image.url image })
+;;
+
 let current_user db ~now ~session_token =
   let open Deferred.Or_error.Let_syntax in
   let%bind user_id = Authenticator.current_user_id ~db ~now ~session_token in
@@ -250,7 +264,7 @@ let implement rpc f =
     f state query >>| ok_exn)
 ;;
 
-let implementations ~db ~time_source =
+let implementations ~db ~time_source (config : Config.t) =
   let open Deferred.Or_error.Let_syntax in
   let current_user_id ~session_token =
     Authenticator.current_user_id ~db ~now:(Time_source.now time_source) ~session_token
@@ -282,6 +296,11 @@ let implementations ~db ~time_source =
       ; implement Rpcs.Update_post.rpc (fun { session_token } query ->
           let%bind user_id = current_user_id ~session_token in
           update_post db ~query ~user_id)
+      ; implement Rpcs.Upload_image.rpc (fun { session_token } { contents } ->
+          let now = Time_source.now time_source in
+          let date = Time_ns.to_date now ~zone:config.zone in
+          let%bind user_id = Authenticator.current_user_id ~db ~now ~session_token in
+          upload_image db ~media_dir:config.media_dir ~date ~contents ~user_id)
       ; implement Rpcs.Get_current_user.rpc (fun { session_token } () ->
           current_user db ~now:(Time_source.now time_source) ~session_token)
       ]

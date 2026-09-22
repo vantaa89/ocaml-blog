@@ -85,7 +85,7 @@ let serve ~time_source db (config : Config.t) =
   in
   Rpc_websocket.Rpc.serve
     ~where_to_listen:(Tcp.Where_to_listen.of_port config.port)
-    ~implementations:(Rpc_implementations.implementations ~db ~time_source)
+    ~implementations:(Rpc_implementations.implementations ~db ~time_source config)
     ~initial_connection_state:(fun () initiated_from _address _connection ->
       let session_token =
         match (initiated_from : Rpc_websocket.Rpc.Connection_initiated_from.t) with
