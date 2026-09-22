@@ -50,7 +50,8 @@ let tag_node ({ name; slug } : Rpcs.Tag.t) =
 ;;
 
 let post_card
-      ({ title; slug; excerpt = _; created_at; tags; languages } : Rpcs.Post_summary.t)
+      ({ title; slug; excerpt = _; thumbnail; created_at; tags; languages } :
+        Rpcs.Post_summary.t)
   =
   let route : Route.t = Post { slug } in
   let languages = List.map languages ~f:Language.to_code |> String.concat ~sep:", " in
@@ -60,7 +61,12 @@ let post_card
          route
          [ Vdom.Node.div
              ~attrs:[ Vdom.Attr.class_ "post-card-image" ]
-             [ Vdom.Node.img ~attrs:[ Vdom.Attr.src placeholder_thumbnail ] () ]
+             [ Vdom.Node.img
+                 ~attrs:
+                   [ Vdom.Attr.src (Option.value thumbnail ~default:placeholder_thumbnail)
+                   ]
+                 ()
+             ]
          ]
      ; link ~attrs:[ Vdom.Attr.class_ "post-title" ] route [ Vdom.Node.text title ]
      ; Vdom.Node.p

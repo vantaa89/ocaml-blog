@@ -66,6 +66,7 @@ let posts_to_summaries db ?query (posts : Database_schema.Post.t list) =
     let%map.Deferred.Or_error tags =
       Database.Post_tag.tags_for_post db ~post_id:post.id
     in
+    let content = Database_schema.Post.content_by_language post in
     ({ title = post.title
      ; slug = post.slug
      ; excerpt =
@@ -73,9 +74,12 @@ let posts_to_summaries db ?query (posts : Database_schema.Post.t list) =
            (primary_content post)
            ~query
            ~max_length:Rpcs.Post_summary.max_excerpt_length
+     ; thumbnail =
+         Map.data content
+         |> List.find_map ~f:(fun markdown -> Utils.first_image ~markdown)
      ; created_at = post.created_at
      ; tags = List.map tags ~f:tag_to_rpc
-     ; languages = Map.keys (Database_schema.Post.content_by_language post)
+     ; languages = Map.keys content
      }
      : Rpcs.Post_summary.t))
 ;;

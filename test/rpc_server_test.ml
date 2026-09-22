@@ -69,8 +69,39 @@ let%expect_test "the post list excludes special posts" =
   [%expect
     {|
     (((title "Hello world") (slug hello-world) (excerpt "Content of Hello world")
-      (created_at "2026-08-02 15:00:00Z") (tags (((name OCaml) (slug ocaml))))
-      (languages (English)))) |}];
+      (thumbnail ()) (created_at "2026-08-02 15:00:00Z")
+      (tags (((name OCaml) (slug ocaml)))) (languages (English)))) |}];
+  return ()
+;;
+
+let%expect_test "a post card shows the first [![](url)] of the post, English first" =
+  let posts =
+    [ { (post ~id:1 ~slug:"bilingual" ~title:"Bilingual post" ~special_post:false) with
+        content_en = Some "Intro ![](/media/en.png)"
+      ; content_ko = Some "![](/media/ko.png)"
+      }
+    ; { (post ~id:2 ~slug:"korean-only" ~title:"Korean-only post" ~special_post:false) with
+        content_en = None
+      ; content_ko = Some "![](/media/ko.png)"
+      }
+    ]
+  in
+  let%bind summaries =
+    Server_test_helpers.with_server
+      (Database.For_testing.create_in_memory ~users:[ author ] ~posts ())
+      ~f:(fun server ->
+        Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
+          Rpc.Rpc.dispatch_exn
+            Rpcs.Get_post_list.rpc
+            connection
+            { tag_slug = None; limit = None; offset = None }))
+  in
+  List.iter summaries ~f:(fun ({ slug; thumbnail; _ } : Rpcs.Post_summary.t) ->
+    print_s [%sexp (slug : string), (thumbnail : string option)]);
+  [%expect
+    {|
+    (korean-only (/media/ko.png))
+    (bilingual (/media/en.png)) |}];
   return ()
 ;;
 
@@ -112,8 +143,8 @@ let%expect_test "search centers the excerpt on the match and ignores short queri
       [%expect
         {|
     (((title "Hello world") (slug hello-world) (excerpt "Content of Hello world")
-      (created_at "2026-08-02 15:00:00Z") (tags (((name OCaml) (slug ocaml))))
-      (languages (English)))) |}];
+      (thumbnail ()) (created_at "2026-08-02 15:00:00Z")
+      (tags (((name OCaml) (slug ocaml)))) (languages (English)))) |}];
       return ()))
 ;;
 
@@ -172,12 +203,13 @@ let%expect_test
         (hidden false))))
      (recent_posts
       (((title Seventh) (slug seventh) (excerpt "Content of Seventh")
-        (created_at "2026-08-07 15:00:00Z") (tags ()) (languages (English)))
-       ((title Sixth) (slug sixth) (excerpt "Content of Sixth")
+        (thumbnail ()) (created_at "2026-08-07 15:00:00Z") (tags ())
+        (languages (English)))
+       ((title Sixth) (slug sixth) (excerpt "Content of Sixth") (thumbnail ())
         (created_at "2026-08-06 15:00:00Z") (tags ()) (languages (English)))
-       ((title Fifth) (slug fifth) (excerpt "Content of Fifth")
+       ((title Fifth) (slug fifth) (excerpt "Content of Fifth") (thumbnail ())
         (created_at "2026-08-05 15:00:00Z") (tags ()) (languages (English)))
-       ((title Fourth) (slug fourth) (excerpt "Content of Fourth")
+       ((title Fourth) (slug fourth) (excerpt "Content of Fourth") (thumbnail ())
         (created_at "2026-08-04 15:00:00Z") (tags ()) (languages (English)))))
      (publications
       (((title "A paper") (image_url /media/2024-01-15/paper.png)

@@ -45,6 +45,7 @@ module Post_summary = struct
     { title : string
     ; slug : string
     ; excerpt : string
+    ; thumbnail : string option
     ; created_at : Time_ns_alternate_sexp.t
     ; tags : Tag.t list
     ; languages : Language.t list

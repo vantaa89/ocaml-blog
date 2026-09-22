@@ -64,7 +64,8 @@ let highlight text ~query =
 ;;
 
 let result_node
-      ({ title; slug; excerpt; created_at; tags; languages = _ } : Rpcs.Post_summary.t)
+      ({ title; slug; excerpt; thumbnail = _; created_at; tags; languages = _ } :
+        Rpcs.Post_summary.t)
       ~query
       ~selected
       ~on_select
