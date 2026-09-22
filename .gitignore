@@ -27,3 +27,4 @@ _opam/
 # Tooling state
 .omc/
 static/main.js
+media/
