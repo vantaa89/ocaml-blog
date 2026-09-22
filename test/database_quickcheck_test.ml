@@ -27,6 +27,20 @@ module Test_slug = struct
   ;;
 end
 
+module Test_tag_name = struct
+  type t =
+    | Ocaml
+    | Ocaml_lowercase
+    | Deep_learning
+  [@@deriving equal, sexp_of, quickcheck]
+
+  let to_string : t -> string = function
+    | Ocaml -> "OCaml"
+    | Ocaml_lowercase -> "ocaml"
+    | Deep_learning -> "Deep Learning"
+  ;;
+end
+
 module Test_token = struct
   type t =
     | A
@@ -89,16 +103,16 @@ module Op = struct
         }
     | List_posts of { as_author : bool }
     | Search_posts of Test_string.t
-    | Find_or_create_tag of Test_slug.t
-    | Find_tag_by_slug of Test_slug.t
+    | Find_or_create_tag of Test_tag_name.t
+    | Find_tag_by_name of Test_tag_name.t
     | Set_tags of
         { post : Ref.t
         ; tags : Ref.t list
         }
     | Tags_for_post of Ref.t
     | List_tags_with_post_counts
-    | List_posts_by_tag_slug of
-        { slug : Test_slug.t
+    | List_posts_by_tag of
+        { name : Test_tag_name.t
         ; as_author : bool
         }
     | Create_news of Test_string.t
@@ -138,7 +152,6 @@ module Observed = struct
     type t =
       { id : Ref.t
       ; name : string
-      ; slug : string
       }
     [@@deriving equal, sexp_of]
   end
@@ -240,7 +253,7 @@ module Side = struct
   ;;
 
   let tag_ref t (tag : Database_schema.Tag.t) : Observed.Tag.t =
-    { id = ref_of_id t.tags tag.id; name = tag.name; slug = tag.slug }
+    { id = ref_of_id t.tags tag.id; name = tag.name }
   ;;
 
   let session_ref t (session : Database_schema.Session.t) : Observed.Session.t =
@@ -339,18 +352,19 @@ let run_op (side : Side.t) (op : Op.t) =
     | Search_posts query ->
       let%map posts = Database.Post.search side.db ~query () in
       Response.Posts (List.map posts ~f:(Side.post_ref side))
-    | Find_or_create_tag slug ->
-      let slug = Test_slug.to_string slug in
+    | Find_or_create_tag name ->
       let%map tag =
-        Database.Tag.find_or_create side.db ~name:[%string "tag %{slug}"] ~slug
+        Database.Tag.find_or_create side.db ~name:(Test_tag_name.to_string name)
       in
       (* [find_or_create] may have found rather than created. *)
       (match Queue.mem side.tags tag.id ~equal:Int.equal with
        | true -> ()
        | false -> Queue.enqueue side.tags tag.id);
       Response.Tag (Some (Side.tag_ref side tag))
-    | Find_tag_by_slug slug ->
-      let%map tag = Database.Tag.find_by_slug side.db ~slug:(Test_slug.to_string slug) in
+    | Find_tag_by_name name ->
+      let%map tag =
+        Database.Tag.find_by_name side.db ~name:(Test_tag_name.to_string name)
+      in
       Response.Tag (Option.map tag ~f:(Side.tag_ref side))
     | Set_tags { post; tags } ->
       with_post_id post ~f:(fun post_id ->
@@ -365,11 +379,11 @@ let run_op (side : Side.t) (op : Op.t) =
       let%map counts = Database.Tag.list_with_post_counts side.db in
       Response.Tag_counts
         (List.map counts ~f:(fun (tag, count) -> Side.tag_ref side tag, count))
-    | List_posts_by_tag_slug { slug; as_author } ->
+    | List_posts_by_tag { name; as_author } ->
       let%map posts =
-        Database.Post.list_by_tag_slug
+        Database.Post.list_by_tag
           side.db
-          ~slug:(Test_slug.to_string slug)
+          ~tag:(Test_tag_name.to_string name)
           ~viewer:(Side.viewer side ~as_author)
           ()
       in

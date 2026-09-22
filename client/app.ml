@@ -44,7 +44,7 @@ let navbar ~search_trigger =
                     ~attrs:[ Vdom.Attr.class_ "nav-item" ]
                     [ Client_utils.link
                         ~attrs:[ Vdom.Attr.class_ "nav-link" ]
-                        (Posts { tag_slug = None; page = 1 })
+                        (Posts { tag = None; page = 1 })
                         [ Vdom.Node.text "posts" ]
                     ]
                 ; Vdom.Node.li
@@ -120,7 +120,7 @@ let component =
     | Post { slug } -> Pages.post_detail ~slug
     | New_post -> Editor.new_post
     | Edit_post { slug } -> Editor.edit_post ~slug
-    | Posts { tag_slug; page } -> Pages.posts ~tag_slug ~page
+    | Posts { tag; page } -> Pages.posts ~tag ~page
     | Search { query; page } -> Pages.search ~query ~page
     | Login -> Login_page.component
   in

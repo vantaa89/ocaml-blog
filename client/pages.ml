@@ -184,7 +184,7 @@ let home =
           (List.map response.recent_posts ~f:Client_utils.post_card)
       ; Client_utils.link
           ~attrs:[ Vdom.Attr.id "more-posts-link" ]
-          (Posts { tag_slug = None; page = 1 })
+          (Posts { tag = None; page = 1 })
           [ Vdom.Node.text "More Posts →" ]
       ; Vdom.Node.hr ()
       ; Vdom.Node.h3 [ Vdom.Node.text "Updates " ]
@@ -212,12 +212,12 @@ let sidebar_node tags =
     [ Vdom.Node.h5 [ Vdom.Node.text "tags" ]
     ; Vdom.Node.ul
         ~attrs:[ Vdom.Attr.class_ "tags" ]
-        (List.map tags ~f:(fun ({ tag; post_count } : Rpcs.Tag_with_count.t) ->
+        (List.map tags ~f:(fun (tag, post_count) ->
            Vdom.Node.li
              [ Client_utils.link
                  ~attrs:[ Vdom.Attr.class_ "sidebar-tag" ]
-                 (Posts { tag_slug = Some tag.slug; page = 1 })
-                 [ Vdom.Node.text [%string "%{tag.name} "] ]
+                 (Posts { tag = Some tag; page = 1 })
+                 [ Vdom.Node.text [%string "%{tag} "] ]
              ; Vdom.Node.span
                  ~attrs:[ Vdom.Attr.class_ "sidebar-tag-count" ]
                  [ Vdom.Node.text [%string "(%{post_count#Int})"] ]
@@ -257,12 +257,12 @@ let post_list_node
     ]
 ;;
 
-let posts ~tag_slug ~page =
+let posts ~tag ~page =
   let%sub query =
-    let%arr tag_slug = tag_slug
+    let%arr tag = tag
     and page = page in
     (* One extra post tells us whether there is a next page. *)
-    { Rpcs.Get_post_list.Query.tag_slug
+    { Rpcs.Get_post_list.Query.tag
     ; limit = Some (Client_utils.page_size + 1)
     ; offset = Some ((page - 1) * Client_utils.page_size)
     }
@@ -288,7 +288,7 @@ let posts ~tag_slug ~page =
   let%sub current_user = Session.current_user in
   let%arr posts_poll = posts_poll
   and tags_poll = tags_poll
-  and tag_slug = tag_slug
+  and tag = tag
   and page = page
   and current_user = current_user in
   Client_utils.of_poll posts_poll ~f:(fun fetched ->
@@ -304,15 +304,14 @@ let posts ~tag_slug ~page =
       | false -> page
     in
     let heading, match_count =
-      match tag_slug with
+      match tag with
       | None -> "posts", None
-      | Some tag_slug ->
+      | Some tag ->
         let count =
-          List.find tags ~f:(fun ({ tag; _ } : Rpcs.Tag_with_count.t) ->
-            String.equal tag.slug tag_slug)
-          |> Option.map ~f:(fun ({ post_count; _ } : Rpcs.Tag_with_count.t) -> post_count)
+          List.find_map tags ~f:(fun (candidate, post_count) ->
+            Option.some_if (String.Caseless.equal candidate tag) post_count)
         in
-        [%string "tag: %{tag_slug}"], count
+        [%string "tag: %{tag}"], count
     in
     let author_actions =
       match current_user with
@@ -332,7 +331,7 @@ let posts ~tag_slug ~page =
       ~match_count
       ~posts
       ~tags
-      ~route:(Route.Posts { tag_slug; page })
+      ~route:(Route.Posts { tag; page })
       ~page
       ~num_pages
       ())

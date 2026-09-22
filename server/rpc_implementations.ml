@@ -2,10 +2,6 @@ open! Core
 open! Async
 open! Import
 
-let tag_to_rpc (tag : Database_schema.Tag.t) : Rpcs.Tag.t =
-  { name = tag.name; slug = tag.slug }
-;;
-
 let primary_content (post : Database_schema.Post.t) =
   (* English takes the precedence *)
   let content = Database_schema.Post.content_by_language post in
@@ -20,7 +16,7 @@ let post_to_rpc db (post : Database_schema.Post.t) =
    ; slug = post.slug
    ; content = Database_schema.Post.content_by_language post
    ; created_at = post.created_at
-   ; tags = List.map tags ~f:tag_to_rpc
+   ; tags = List.map tags ~f:(fun (tag : Database_schema.Tag.t) -> tag.name)
    ; special_post = post.special_post
    ; hidden = post.hidden
    }
@@ -78,7 +74,7 @@ let posts_to_summaries db ?query (posts : Database_schema.Post.t list) =
          Map.data content
          |> List.find_map ~f:(fun markdown -> Utils.first_image ~markdown)
      ; created_at = post.created_at
-     ; tags = List.map tags ~f:tag_to_rpc
+     ; tags = List.map tags ~f:(fun tag -> tag.name)
      ; languages = Map.keys content
      }
      : Rpcs.Post_summary.t))
@@ -95,12 +91,6 @@ let find_post db ~slug ~viewer =
      | true ->
        let%map post = post_to_rpc db post in
        Some post)
-;;
-
-let tags_with_counts db =
-  let%map.Deferred.Or_error tags = Database.Tag.list_with_post_counts db in
-  List.map tags ~f:(fun (tag, post_count) : Rpcs.Tag_with_count.t ->
-    { tag = tag_to_rpc tag; post_count })
 ;;
 
 let publication_to_rpc db (publication : Database_schema.Publication.t) =
@@ -141,13 +131,12 @@ let main_page db ~viewer =
    : Rpcs.Get_main_page.Response.t)
 ;;
 
-let post_list db ~query ~viewer =
+let post_list db ~query:({ tag; limit; offset } : Rpcs.Get_post_list.Query.t) ~viewer =
   let open Deferred.Or_error.Let_syntax in
-  let ({ tag_slug; limit; offset } : Rpcs.Get_post_list.Query.t) = query in
   let%bind posts =
-    match tag_slug with
+    match tag with
     | None -> Database.Post.list db ~viewer ?limit ?offset ()
-    | Some slug -> Database.Post.list_by_tag_slug db ~slug ~viewer ?limit ?offset ()
+    | Some tag -> Database.Post.list_by_tag db ~tag ~viewer ?limit ?offset ()
   in
   posts_to_summaries db posts
 ;;
@@ -180,6 +169,20 @@ let duplicate_slug ?except_id slug ~db =
      | Some id -> existing.id <> id)
 ;;
 
+let set_tags db ~post_id ~names =
+  let open Deferred.Or_error.Let_syntax in
+  let%bind tags =
+    List.map names ~f:String.strip
+    |> List.filter ~f:(Fn.non String.is_empty)
+    |> Deferred.Or_error.List.map ~how:`Sequential ~f:(fun name ->
+      Database.Tag.find_or_create db ~name)
+  in
+  Database.Post_tag.set_tags
+    db
+    ~post_id
+    ~tag_ids:(List.map tags ~f:(fun (tag : Database_schema.Tag.t) -> tag.id))
+;;
+
 let create_post db ~(form : Rpcs.Post_form.t) ~user_id ~now =
   let open Deferred.Or_error.Let_syntax in
   let open Rpcs.Create_post.Response in
@@ -189,7 +192,7 @@ let create_post db ~(form : Rpcs.Post_form.t) ~user_id ~now =
     (match%bind duplicate_slug ~db form.slug with
      | true -> return Duplicate_slug
      | false ->
-       let%map (_ : Database_schema.Post.t) =
+       let%bind post =
          Database.Post.create
            db
            ~title:form.title
@@ -200,6 +203,7 @@ let create_post db ~(form : Rpcs.Post_form.t) ~user_id ~now =
            ~special_post:form.special_post
            ~now
        in
+       let%map () = set_tags db ~post_id:post.id ~names:form.tags in
        Saved)
 ;;
 
@@ -228,6 +232,7 @@ let update_post db ~query:({ slug; form } : Rpcs.Update_post.Query.t) ~user_id =
                  ~content_ko:(Map.find form.content Korean)
                  ~special_post:form.special_post
              in
+             let%bind () = set_tags db ~post_id:post.id ~names:form.tags in
              return Saved)))
 ;;
 
@@ -288,7 +293,9 @@ let implementations ~db ~time_source (config : Config.t) =
       ; implement Rpcs.Get_post_list.rpc (fun { session_token } query ->
           let%bind viewer = current_user_id ~session_token in
           post_list db ~query ~viewer)
-      ; implement Rpcs.Get_tags.rpc (fun _state () -> tags_with_counts db)
+      ; implement Rpcs.Get_tags.rpc (fun _state () ->
+          let%map tags = Database.Tag.list_with_post_counts db in
+          List.map tags ~f:(fun (tag, post_count) -> tag.name, post_count))
       ; implement Rpcs.Search_posts.rpc (fun _state { query } -> search db ~query)
       ; implement Rpcs.Set_post_hidden.rpc (fun { session_token } query ->
           let%bind user_id = current_user_id ~session_token in

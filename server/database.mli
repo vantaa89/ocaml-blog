@@ -32,10 +32,10 @@ module Post : sig
     -> unit
     -> Database_schema.Post.t list Deferred.Or_error.t
 
-  (** Like [list], restricted to the posts carrying [slug]. *)
-  val list_by_tag_slug
+  (** Like [list], restricted to the posts carrying [tag], regardless of case. *)
+  val list_by_tag
     :  t
-    -> slug:string
+    -> tag:string
     -> viewer:int option
     -> ?limit:int
     -> ?offset:int (* default: [0] *)
@@ -108,13 +108,11 @@ module Image : sig
 end
 
 module Tag : sig
-  val find_by_slug : t -> slug:string -> Database_schema.Tag.t option Deferred.Or_error.t
+  (** Tag names are compared regardless of case. *)
+  val find_by_name : t -> name:string -> Database_schema.Tag.t option Deferred.Or_error.t
 
-  val find_or_create
-    :  t
-    -> name:string
-    -> slug:string
-    -> Database_schema.Tag.t Deferred.Or_error.t
+  (** An existing tag keeps its own casing of the name. *)
+  val find_or_create : t -> name:string -> Database_schema.Tag.t Deferred.Or_error.t
 
   val list_with_post_counts : t -> (Database_schema.Tag.t * int) list Deferred.Or_error.t
 end

@@ -35,17 +35,17 @@ let link ?(attrs = []) route children =
 
 let placeholder_thumbnail = "/static/placeholder.jpeg"
 
-let tag_node ({ name; slug } : Rpcs.Tag.t) =
+let tag_node tag =
   link
     ~attrs:[ Vdom.Attr.class_ "tag" ]
-    (Posts { tag_slug = Some slug; page = 1 })
+    (Posts { tag = Some tag; page = 1 })
     [ Vdom.Node.img
         ~attrs:
           [ Vdom.Attr.src "/static/icons/tag.png"
           ; Vdom.Attr.style Css_gen.(height (`Px 12) @> width (`Px 12))
           ]
         ()
-    ; Vdom.Node.text [%string " %{name}"]
+    ; Vdom.Node.text [%string " %{tag}"]
     ]
 ;;
 

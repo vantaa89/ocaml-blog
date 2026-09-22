@@ -92,10 +92,10 @@ let result_node
         (Vdom.Node.span
            ~attrs:[ Vdom.Attr.class_ "search-result-date" ]
            [ Vdom.Node.text (Client_utils.format_time created_at) ]
-         :: List.map tags ~f:(fun (tag : Rpcs.Tag.t) ->
+         :: List.map tags ~f:(fun tag ->
            Vdom.Node.span
              ~attrs:[ Vdom.Attr.class_ "search-result-tag" ]
-             [ Vdom.Node.text tag.name ]))
+             [ Vdom.Node.text tag ]))
     ]
 ;;
 

@@ -4,7 +4,7 @@ open! Import
 type t =
   | Home
   | Posts of
-      { tag_slug : string option
+      { tag : string option
       ; page : int
       }
   | Post of { slug : string }
@@ -41,12 +41,12 @@ let parse_exn (components : Bonsai_web_ui_url_var.Components.t) : t =
   | [] -> Home
   | [ "about" ] -> About
   | [ "posts" ] ->
-    let tag_slug =
+    let tag =
       Map.find components.query "tag"
       |> Option.bind ~f:List.hd
       |> Option.map ~f:String.strip
     in
-    Posts { tag_slug; page }
+    Posts { tag; page }
   | [ "post"; slug ] -> Post { slug }
   | [ "post"; slug; "edit" ] -> Edit_post { slug }
   | [ "new-post" ] -> New_post
@@ -72,10 +72,9 @@ let unparse (t : t) : Bonsai_web_ui_url_var.Components.t =
   | Post { slug } -> create [%string "post/%{Uri.pct_encode slug}"]
   | New_post -> create "new-post"
   | Edit_post { slug } -> create [%string "post/%{Uri.pct_encode slug}/edit"]
-  | Posts { tag_slug; page } ->
+  | Posts { tag; page } ->
     let query =
-      query_of_alist
-        [ Option.map tag_slug ~f:(fun tag_slug -> "tag", [ tag_slug ]); page_param page ]
+      query_of_alist [ Option.map tag ~f:(fun tag -> "tag", [ tag ]); page_param page ]
     in
     create ~query "posts"
   | Search { query; page } ->
@@ -95,15 +94,15 @@ let to_string t =
 
 let with_page t page =
   match t with
-  | Posts { tag_slug; page = _ } -> Posts { tag_slug; page }
+  | Posts { tag; page = _ } -> Posts { tag; page }
   | Search { query; page = _ } -> Search { query; page }
   | (Home | About | Post _ | New_post | Edit_post _ | Login) as t -> t
 ;;
 
 let title = function
   | Home -> "Your Name"
-  | Posts { tag_slug = None; _ } -> "Posts"
-  | Posts { tag_slug = Some tag_slug; _ } -> [%string "tag: %{tag_slug}"]
+  | Posts { tag = None; _ } -> "Posts"
+  | Posts { tag = Some tag; _ } -> [%string "tag: %{tag}"]
   | Post { slug } -> slug
   | New_post -> "new post"
   | Edit_post { slug } -> [%string "edit: %{slug}"]

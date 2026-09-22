@@ -11,6 +11,15 @@ let time_ns_of_value_exn value =
 
 let value_of_time_ns time = Time_ns.to_string_utc time |> Pgx_async.Value.of_string
 
+module type Table = sig
+  type t [@@deriving compare]
+
+  val table : string
+  val columns : string list
+  val create_sql : string list
+  val of_row : Pgx.Value.t list -> t
+end
+
 module User = struct
   type t =
     { id : int
@@ -43,8 +52,8 @@ module User = struct
   ;;
 
   let create_sql =
-    [%string
-      {sql|
+    [ [%string
+        {sql|
     CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,
@@ -54,6 +63,7 @@ module User = struct
       last_login TIMESTAMPTZ
     )
     |sql}]
+    ]
   ;;
 end
 
@@ -81,14 +91,15 @@ module Image = struct
   ;;
 
   let create_sql =
-    [%string
-      {sql|
+    [ [%string
+        {sql|
     CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       filename TEXT NOT NULL,
       date DATE NOT NULL
     )
     |sql}]
+    ]
   ;;
 end
 
@@ -96,7 +107,6 @@ module Tag = struct
   type t =
     { id : int
     ; name : string
-    ; slug : string
     }
   [@@deriving fields, compare]
 
@@ -106,23 +116,22 @@ module Tag = struct
   let of_row row : t =
     let module Value = Pgx_async.Value in
     match row with
-    | [ id; name; slug ] ->
-      { id = Value.to_int_exn id
-      ; name = Value.to_string_exn name
-      ; slug = Value.to_string_exn slug
-      }
+    | [ id; name ] -> { id = Value.to_int_exn id; name = Value.to_string_exn name }
     | _ -> raise_s [%message "Unexpected row shape for Tag" (row : Value.t list)]
   ;;
 
   let create_sql =
-    [%string
-      {sql|
+    [ [%string
+        {sql|
     CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      slug TEXT NOT NULL UNIQUE
+      name TEXT NOT NULL
     )
     |sql}]
+    ; [%string
+        "CREATE UNIQUE INDEX IF NOT EXISTS %{table}_lower_name_key ON %{table} \
+         (lower(name))"]
+    ]
   ;;
 end
 
@@ -178,8 +187,8 @@ module Post = struct
   ;;
 
   let create_sql =
-    [%string
-      {sql|
+    [ [%string
+        {sql|
     CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
@@ -192,6 +201,7 @@ module Post = struct
       hidden BOOLEAN NOT NULL
     )
     |sql}]
+    ]
   ;;
 end
 
@@ -226,8 +236,8 @@ module Publication = struct
   ;;
 
   let create_sql =
-    [%string
-      {sql|
+    [ [%string
+        {sql|
     CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
@@ -238,6 +248,7 @@ module Publication = struct
       hidden BOOLEAN NOT NULL
     )
     |sql}]
+    ]
   ;;
 end
 
@@ -264,14 +275,15 @@ module News = struct
   ;;
 
   let create_sql =
-    [%string
-      {sql|
+    [ [%string
+        {sql|
     CREATE TABLE IF NOT EXISTS %{table} (
       id SERIAL PRIMARY KEY,
       content TEXT NOT NULL,
       date DATE NOT NULL
     )
     |sql}]
+    ]
   ;;
 end
 
@@ -318,9 +330,18 @@ module Post_tag = struct
     { post_id : int
     ; tag_id : int
     }
-  [@@deriving compare]
+  [@@deriving fields, compare]
 
   let table = "post_tags"
+  let columns = Fields.names
+
+  let of_row row : t =
+    let module Value = Pgx_async.Value in
+    match row with
+    | [ post_id; tag_id ] ->
+      { post_id = Value.to_int_exn post_id; tag_id = Value.to_int_exn tag_id }
+    | _ -> raise_s [%message "Unexpected row shape for Post_tag" (row : Value.t list)]
+  ;;
 
   (* Needs secondary index based on [tag_id] *)
   let create_sql =
@@ -338,13 +359,14 @@ module Post_tag = struct
 end
 
 let create_sql =
-  [ User.create_sql
-  ; Image.create_sql
-  ; Tag.create_sql
-  ; Post.create_sql
-  ; Publication.create_sql
-  ; News.create_sql
-  ]
-  @ Session.create_sql
-  @ Post_tag.create_sql
+  List.concat
+    [ User.create_sql
+    ; Image.create_sql
+    ; Tag.create_sql
+    ; Post.create_sql
+    ; Publication.create_sql
+    ; News.create_sql
+    ; Session.create_sql
+    ; Post_tag.create_sql
+    ]
 ;;

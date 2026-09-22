@@ -7,6 +7,15 @@ open! Import
     a written [Time_ns.t] does not round-trip. *)
 val value_of_time_ns : Time_ns.t -> Pgx.Value.t
 
+module type Table = sig
+  type t [@@deriving compare]
+
+  val table : string
+  val columns : string list
+  val create_sql : string list
+  val of_row : Pgx.Value.t list -> t
+end
+
 module User : sig
   type t =
     { id : int
@@ -16,12 +25,8 @@ module User : sig
     ; date_joined : Date.t
     ; last_login : Time_ns.t option
     }
-  [@@deriving compare]
 
-  val table : string
-  val create_sql : string
-  val columns : string list
-  val of_row : Pgx.Value.t list -> t
+  include Table with type t := t
 end
 
 module Image : sig
@@ -30,12 +35,9 @@ module Image : sig
     ; filename : string
     ; date : Date.t
     }
-  [@@deriving compare]
 
-  val table : string
-  val create_sql : string
-  val columns : string list
-  val of_row : Pgx.Value.t list -> t
+  include Table with type t := t
+
   val url : t -> string
 end
 
@@ -43,14 +45,9 @@ module Tag : sig
   type t =
     { id : int
     ; name : string
-    ; slug : string
     }
-  [@@deriving compare]
 
-  val table : string
-  val create_sql : string
-  val columns : string list
-  val of_row : Pgx.Value.t list -> t
+  include Table with type t := t
 end
 
 module Post : sig
@@ -65,13 +62,10 @@ module Post : sig
     ; special_post : bool
     ; hidden : bool
     }
-  [@@deriving compare]
 
-  val table : string
-  val create_sql : string
-  val columns : string list
+  include Table with type t := t
+
   val content_by_language : t -> string Language.Map.t
-  val of_row : Pgx.Value.t list -> t
 end
 
 module Publication : sig
@@ -84,12 +78,8 @@ module Publication : sig
     ; link : string option
     ; hidden : bool
     }
-  [@@deriving compare]
 
-  val table : string
-  val create_sql : string
-  val columns : string list
-  val of_row : Pgx.Value.t list -> t
+  include Table with type t := t
 end
 
 module News : sig
@@ -98,12 +88,8 @@ module News : sig
     ; content : string
     ; date : Date.t
     }
-  [@@deriving compare]
 
-  val table : string
-  val create_sql : string
-  val columns : string list
-  val of_row : Pgx.Value.t list -> t
+  include Table with type t := t
 end
 
 module Session : sig
@@ -112,12 +98,8 @@ module Session : sig
     ; user_id : int
     ; expires_at : Time_ns.t
     }
-  [@@deriving compare]
 
-  val table : string
-  val create_sql : string list
-  val columns : string list
-  val of_row : Pgx.Value.t list -> t
+  include Table with type t := t
 end
 
 module Post_tag : sig
@@ -125,10 +107,8 @@ module Post_tag : sig
     { post_id : int
     ; tag_id : int
     }
-  [@@deriving compare]
 
-  val table : string
-  val create_sql : string list
+  include Table with type t := t
 end
 
 val create_sql : string list

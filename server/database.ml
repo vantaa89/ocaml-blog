@@ -125,15 +125,17 @@ module Post = struct
         List.map rows ~f:Database_schema.Post.of_row)
   ;;
 
-  let list_by_tag_slug t ~slug ~viewer ?limit ?(offset = 0) () =
+  let list_by_tag t ~tag ~viewer ?limit ?(offset = 0) () =
     match t with
     | Mock { posts; tags; post_tags; _ } ->
-      (match List.find !tags ~f:(fun tag -> String.equal tag.slug slug) with
+      (match
+         List.find !tags ~f:(fun candidate -> String.Caseless.equal candidate.name tag)
+       with
        | None -> Deferred.Or_error.return []
-       | Some tag ->
+       | Some { id = tag_id; _ } ->
          let post_ids =
            List.filter_map !post_tags ~f:(fun post_tag ->
-             match tag.id = post_tag.tag_id with
+             match tag_id = post_tag.tag_id with
              | true -> Some post_tag.post_id
              | false -> None)
            |> Int.Set.of_list
@@ -167,13 +169,13 @@ module Post = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_string slug; Value.opt Value.of_int viewer ]
+            ~params:[ Value.of_string tag; Value.opt Value.of_int viewer ]
             [%string
               "SELECT %{columns} FROM %{Database_schema.Post.table} p JOIN \
                %{Database_schema.Post_tag.table} pt ON p.id = pt.post_id JOIN \
-               %{Database_schema.Tag.table} tag ON pt.tag_id = tag.id WHERE tag.slug = \
-               $1 %{where} ORDER BY p.created_at DESC %{limit_clause} OFFSET \
-               %{offset#Int}"]
+               %{Database_schema.Tag.table} tag ON pt.tag_id = tag.id WHERE \
+               lower(tag.name) = lower($1) %{where} ORDER BY p.created_at DESC \
+               %{limit_clause} OFFSET %{offset#Int}"]
         in
         List.map rows ~f:Database_schema.Post.of_row)
   ;;
@@ -565,10 +567,10 @@ module Image = struct
 end
 
 module Tag = struct
-  let find_by_slug t ~slug =
+  let find_by_name t ~name =
     match t with
     | Mock { tags; _ } ->
-      List.find !tags ~f:(fun tag -> String.equal tag.slug slug)
+      List.find !tags ~f:(fun tag -> String.Caseless.equal tag.name name)
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
@@ -577,23 +579,24 @@ module Tag = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_string slug ]
+            ~params:[ Value.of_string name ]
             [%string
-              "SELECT %{columns} FROM %{Database_schema.Tag.table} WHERE slug = $1"]
+              "SELECT %{columns} FROM %{Database_schema.Tag.table} WHERE lower(name) = \
+               lower($1)"]
         in
         Utils.expect_at_most_one rows ~error_message:(fun _ ->
-          [%message "Expected at most one tag for slug" (slug : string)])
+          [%message "Expected at most one tag for name" (name : string)])
         |> Option.map ~f:Database_schema.Tag.of_row)
   ;;
 
-  let find_or_create t ~name ~slug =
+  let find_or_create t ~name =
     match t with
     | Mock { tags; _ } ->
-      (match List.find !tags ~f:(fun tag -> String.equal tag.slug slug) with
+      (match List.find !tags ~f:(fun tag -> String.Caseless.equal tag.name name) with
        | Some tag -> Deferred.Or_error.return tag
        | None ->
          let tag : Database_schema.Tag.t =
-           { id = next_id !tags ~id:(fun tag -> tag.id); name; slug }
+           { id = next_id !tags ~id:(fun tag -> tag.id); name }
          in
          tags := tag :: !tags;
          Deferred.Or_error.return tag)
@@ -603,13 +606,13 @@ module Tag = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_string name; Value.of_string slug ]
+            ~params:[ Value.of_string name ]
             [%string
               {sql|
-            INSERT INTO %{Database_schema.Tag.table} (name, slug)
-            VALUES ($1, $2)
-            ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
-            RETURNING id, name, slug
+            INSERT INTO %{Database_schema.Tag.table} (name)
+            VALUES ($1)
+            ON CONFLICT ((lower(name))) DO UPDATE SET name = %{Database_schema.Tag.table}.name
+            RETURNING id, name
             |sql}]
         in
         match rows with
@@ -639,7 +642,7 @@ module Tag = struct
             connection
             [%string
               {sql|
-            SELECT tag.id, tag.name, tag.slug, COUNT(*)
+            SELECT tag.id, tag.name, COUNT(*)
             FROM %{Database_schema.Tag.table} tag
             JOIN %{Database_schema.Post_tag.table} ON tag.id = %{Database_schema.Post_tag.table}.tag_id
             GROUP BY tag.id
@@ -648,8 +651,8 @@ module Tag = struct
         in
         List.map rows ~f:(fun row ->
           match row with
-          | [ id; name; slug; count ] ->
-            Database_schema.Tag.of_row [ id; name; slug ], Value.to_int_exn count
+          | [ id; name; count ] ->
+            Database_schema.Tag.of_row [ id; name ], Value.to_int_exn count
           | _ ->
             raise_s [%message "Unexpected row shape for Tag count" (row : Value.t list)]))
   ;;

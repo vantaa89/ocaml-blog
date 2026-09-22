@@ -42,7 +42,7 @@ let posts =
   ]
 ;;
 
-let tags : Database_schema.Tag.t list = [ { id = 1; name = "OCaml"; slug = "ocaml" } ]
+let tags : Database_schema.Tag.t list = [ { id = 1; name = "Tag" } ]
 let post_tags : Database_schema.Post_tag.t list = [ { post_id = 2; tag_id = 1 } ]
 
 let with_seeded_server ~f =
@@ -63,14 +63,14 @@ let%expect_test "the post list excludes special posts" =
         Rpc.Rpc.dispatch_exn
           Rpcs.Get_post_list.rpc
           connection
-          { tag_slug = None; limit = None; offset = None }))
+          { tag = None; limit = None; offset = None }))
   in
   print_s [%sexp (response : Rpcs.Post_summary.t list)];
   [%expect
     {|
     (((title "Hello world") (slug hello-world) (excerpt "Content of Hello world")
-      (thumbnail ()) (created_at "2026-08-02 15:00:00Z")
-      (tags (((name OCaml) (slug ocaml)))) (languages (English)))) |}];
+      (thumbnail ()) (created_at "2026-08-02 15:00:00Z") (tags (Tag))
+      (languages (English)))) |}];
   return ()
 ;;
 
@@ -94,7 +94,7 @@ let%expect_test "a post card shows the first [![](url)] of the post, English fir
           Rpc.Rpc.dispatch_exn
             Rpcs.Get_post_list.rpc
             connection
-            { tag_slug = None; limit = None; offset = None }))
+            { tag = None; limit = None; offset = None }))
   in
   List.iter summaries ~f:(fun ({ slug; thumbnail; _ } : Rpcs.Post_summary.t) ->
     print_s [%sexp (slug : string), (thumbnail : string option)]);
@@ -111,8 +111,8 @@ let%expect_test "the tag list reports how many posts carry each tag" =
       Server_test_helpers.with_rpc_connection server ~f:(fun connection ->
         Rpc.Rpc.dispatch_exn Rpcs.Get_tags.rpc connection ()))
   in
-  print_s [%sexp (response : Rpcs.Tag_with_count.t list)];
-  [%expect {| (((tag ((name OCaml) (slug ocaml))) (post_count 1))) |}];
+  print_s [%sexp (response : Rpcs.Get_tags.Response.t)];
+  [%expect {| ((Tag 1)) |}];
   return ()
 ;;
 
@@ -127,8 +127,8 @@ let%expect_test "a post is fetched by slug, with its tags and languages" =
     {|
     (((title "Hello world") (slug hello-world)
       (content ((English "Content of Hello world")))
-      (created_at "2026-08-02 15:00:00Z") (tags (((name OCaml) (slug ocaml))))
-      (special_post false) (hidden false))) |}];
+      (created_at "2026-08-02 15:00:00Z") (tags (Tag)) (special_post false)
+      (hidden false))) |}];
   return ()
 ;;
 
@@ -143,8 +143,8 @@ let%expect_test "search centers the excerpt on the match and ignores short queri
       [%expect
         {|
     (((title "Hello world") (slug hello-world) (excerpt "Content of Hello world")
-      (thumbnail ()) (created_at "2026-08-02 15:00:00Z")
-      (tags (((name OCaml) (slug ocaml)))) (languages (English)))) |}];
+      (thumbnail ()) (created_at "2026-08-02 15:00:00Z") (tags (Tag))
+      (languages (English)))) |}];
       return ()))
 ;;
 
@@ -230,6 +230,7 @@ let%expect_test "an anonymous connection cannot write posts" =
           ; slug = "sneaky"
           ; content = Language.Map.singleton English "Written by nobody"
           ; special_post = false
+          ; tags = []
           }
         in
         let%bind created = Rpc.Rpc.dispatch Rpcs.Create_post.rpc connection form in
@@ -244,7 +245,7 @@ let%expect_test "an anonymous connection cannot write posts" =
           Rpc.Rpc.dispatch_exn
             Rpcs.Get_post_list.rpc
             connection
-            { tag_slug = None; limit = None; offset = None }
+            { tag = None; limit = None; offset = None }
         in
         print_s
           [%sexp
@@ -259,6 +260,7 @@ let form : Rpcs.Post_form.t =
   ; slug = "first"
   ; content = Language.Map.singleton English "Hello"
   ; special_post = false
+  ; tags = []
   }
 ;;
 
@@ -296,6 +298,39 @@ let%expect_test "the author creates a post and edits it" =
         (((title "First, revised") (slug first-revised) (content ((English Hello)))
           (created_at "2026-08-01 00:00:00Z") (tags ()) (special_post false)
           (hidden false))) |}];
+      return ()))
+;;
+
+let%expect_test "saving a post sets its tags, reusing existing ones regardless of case" =
+  with_seeded_server ~f:(fun server ->
+    let%bind _response, token =
+      Server_test_helpers.login ~username:author.username ~password server
+    in
+    Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+      let print_tags () =
+        let%map post =
+          Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug = "first" }
+        in
+        print_s [%sexp (Option.map post ~f:(fun post -> post.tags) : string list option)]
+      in
+      let%bind (_ : Rpcs.Create_post.Response.t) =
+        Rpc.Rpc.dispatch_exn
+          Rpcs.Create_post.rpc
+          connection
+          { form with tags = [ "tag"; "Other tag"; " Padded tag "; "" ] }
+      in
+      let%bind () = print_tags () in
+      [%expect
+        {|
+        ((Tag "Other tag" "Padded tag")) |}];
+      let%bind (_ : Rpcs.Update_post.Response.t) =
+        Rpc.Rpc.dispatch_exn
+          Rpcs.Update_post.rpc
+          connection
+          { slug = "first"; form = { form with tags = [ "Other tag" ] } }
+      in
+      let%bind () = print_tags () in
+      [%expect {| (("Other tag")) |}];
       return ()))
 ;;
 

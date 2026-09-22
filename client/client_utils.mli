@@ -20,7 +20,7 @@ val paginate : 'a list -> page:int -> 'a list
     a real [href], so copying the link or opening it in a new tab behaves normally. *)
 val link : ?attrs:Vdom.Attr.t list -> Route.t -> Vdom.Node.t list -> Vdom.Node.t
 
-val tag_node : Rpcs.Tag.t -> Vdom.Node.t
+val tag_node : string -> Vdom.Node.t
 
 (** The [post-card] block shared by [index.html] and [posts.html]. *)
 val post_card : Rpcs.Post_summary.t -> Vdom.Node.t

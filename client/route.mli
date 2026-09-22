@@ -7,7 +7,7 @@ open! Import
 type t =
   | Home
   | Posts of
-      { tag_slug : string option
+      { tag : string option
       ; page : int
       }
   | Post of { slug : string }

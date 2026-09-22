@@ -25,6 +25,7 @@ module Model = struct
     ; language : Language.t option
     ; status : Status.t
     ; uploading : bool
+    ; tag_draft : string
     }
   [@@deriving sexp, equal]
 
@@ -34,6 +35,7 @@ module Model = struct
     ; language = None
     ; status = Editing
     ; uploading = false
+    ; tag_draft = ""
     }
   ;;
 end
@@ -47,18 +49,34 @@ module Action = struct
     | Select_language of Language.t
     | Set_status of Status.t
     | Set_uploading of bool
+    | Set_tag_draft of string
+    | Add_tags (* From the draft *)
+    | Remove_tag of string
     | Reset
   [@@deriving sexp_of]
 end
 
 let empty_form : Rpcs.Post_form.t =
-  { title = ""; slug = ""; content = Language.Map.empty; special_post = false }
+  { title = ""; slug = ""; content = Language.Map.empty; special_post = false; tags = [] }
 ;;
 
-let form_of_post ({ title; slug; content; special_post; _ } : Rpcs.Post.t)
+let form_of_post ({ title; slug; content; special_post; tags; _ } : Rpcs.Post.t)
   : Rpcs.Post_form.t
   =
-  { title; slug; content; special_post }
+  { title; slug; content; special_post; tags }
+;;
+
+let add_tags (form : Rpcs.Post_form.t) draft =
+  let tags =
+    String.split draft ~on:','
+    |> List.map ~f:String.strip
+    |> List.filter ~f:(Fn.non String.is_empty)
+    |> List.fold ~init:form.tags ~f:(fun tags name ->
+      match List.mem tags name ~equal:String.Caseless.equal with
+      | true -> tags
+      | false -> tags @ [ name ])
+  in
+  { form with tags }
 ;;
 
 (* Non-ASCII bytes are kept, so a Korean title still yields a readable slug. *)
@@ -127,6 +145,13 @@ let apply_action
      | Select_language language -> { model with language = Some language }
      | Set_status status -> { model with status }
      | Set_uploading uploading -> { model with uploading }
+     | Set_tag_draft tag_draft ->
+       (match String.mem tag_draft ',' with
+        | true -> { (edit (add_tags form tag_draft)) with tag_draft = "" }
+        | false -> { model with tag_draft })
+     | Add_tags -> { (edit (add_tags form model.tag_draft)) with tag_draft = "" }
+     | Remove_tag name ->
+       edit { form with tags = List.filter form.tags ~f:(Fn.non (String.equal name)) }
      | Reset -> Model.default)
 ;;
 
@@ -177,6 +202,54 @@ let language_toggle ~(language : Language.t) ~inject =
   Vdom.Node.div
     ~attrs:[ Vdom.Attr.class_ "language-toggle" ]
     [ button English "EN"; button Korean "한" ]
+;;
+
+let tag_editor ~tags ~draft ~inject =
+  let on_keyup event =
+    match Js_of_ocaml.Dom_html.Keyboard_code.of_event event with
+    | Enter | NumpadEnter -> inject Action.Add_tags
+    | _ -> Effect.Ignore
+  in
+  let on_keydown event =
+    let composing =
+      Js_of_ocaml.Js.to_bool (Js_of_ocaml.Js.Unsafe.coerce event)##.isComposing
+    in
+    match
+      composing, Js_of_ocaml.Dom_html.Keyboard_code.of_event event, List.last tags
+    with
+    | false, Backspace, Some last ->
+      (match String.is_empty draft with
+       | true -> inject (Action.Remove_tag last)
+       | false -> Effect.Ignore)
+    | _, _, _ -> Effect.Ignore
+  in
+  Vdom.Node.div
+    ~attrs:[ Vdom.Attr.class_ "editor-tags" ]
+    (List.map tags ~f:(fun name ->
+       Vdom.Node.span
+         ~key:[%string "tag-%{name}"]
+         ~attrs:[ Vdom.Attr.class_ "tag" ]
+         [ Vdom.Node.text name
+         ; Vdom.Node.button
+             ~attrs:
+               [ Vdom.Attr.type_ "button"
+               ; Vdom.Attr.create "aria-label" [%string "Remove %{name}"]
+               ; Vdom.Attr.on_click (fun _ -> inject (Action.Remove_tag name))
+               ]
+             [ Vdom.Node.text "×" ]
+         ])
+     @ [ Vdom.Node.input
+           ~key:"input"
+           ~attrs:
+             [ Vdom.Attr.type_ "text"
+             ; Vdom.Attr.placeholder "Add a tag"
+             ; Vdom.Attr.value_prop draft
+             ; Vdom.Attr.on_input (fun _ draft -> inject (Action.Set_tag_draft draft))
+             ; Vdom.Attr.on_keydown on_keydown
+             ; Vdom.Attr.on_keyup on_keyup
+             ]
+           ()
+       ])
 ;;
 
 let view
@@ -246,6 +319,7 @@ let view
                 ~attrs:[ Vdom.Attr.class_ "editor-actions" ]
                 [ language_toggle ~language ~inject ]
             ]
+        ; tag_editor ~tags:form.tags ~draft:model.tag_draft ~inject
         ; (match model.status with
            | Failed message ->
              Vdom.Node.p

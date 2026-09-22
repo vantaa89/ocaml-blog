@@ -9,29 +9,13 @@ module Time_ns_alternate_sexp = struct
   let equal = Time_ns.equal
 end
 
-module Tag = struct
-  type t =
-    { name : string
-    ; slug : string
-    }
-  [@@deriving bin_io, sexp, equal]
-end
-
-module Tag_with_count = struct
-  type t =
-    { tag : Tag.t
-    ; post_count : int
-    }
-  [@@deriving bin_io, sexp, equal]
-end
-
 module Post = struct
   type t =
     { title : string
     ; slug : string
     ; content : string Map.M(Language).t
     ; created_at : Time_ns_alternate_sexp.t
-    ; tags : Tag.t list
+    ; tags : string list
     ; special_post : bool
     ; hidden : bool
     }
@@ -47,7 +31,7 @@ module Post_summary = struct
     ; excerpt : string
     ; thumbnail : string option
     ; created_at : Time_ns_alternate_sexp.t
-    ; tags : Tag.t list
+    ; tags : string list
     ; languages : Language.t list
     }
   [@@deriving bin_io, sexp, equal]
@@ -127,7 +111,7 @@ end
 module Get_post_list = struct
   module Query = struct
     type t =
-      { tag_slug : string option
+      { tag : string option
       ; limit : int option
       ; offset : int option
       }
@@ -149,7 +133,7 @@ end
 
 module Get_tags = struct
   module Response = struct
-    type t = Tag_with_count.t list [@@deriving bin_io, sexp, equal]
+    type t = (string * int) list [@@deriving bin_io, sexp, equal]
   end
 
   let rpc =
@@ -203,6 +187,7 @@ module Post_form = struct
     ; slug : string
     ; content : string Map.M(Language).t
     ; special_post : bool
+    ; tags : string list
     }
   [@@deriving bin_io, sexp, equal]
 end

@@ -1153,3 +1153,31 @@ body:has(.editor) {
 .editor-image-button input {
     display: none;
 }
+
+/* The editor's tags: the post cards' [.tag], each with a button to remove it, followed by
+   the input for the next one. */
+
+.editor-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 6px;
+    font-size: 14px;
+}
+
+.editor-tags .tag button {
+    padding: 0 0 0 4px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    line-height: 1;
+}
+
+.editor-tags input {
+    flex: 1;
+    min-width: 120px;
+    border: none;
+    background: transparent;
+    outline: none;
+    color: #212529;
+}
