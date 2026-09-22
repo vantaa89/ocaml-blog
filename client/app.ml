@@ -13,7 +13,13 @@ let navbar ~search_trigger =
         [ Client_utils.link
             ~attrs:[ Vdom.Attr.class_ "navbar-brand" ]
             Home
-            [ Vdom.Node.create "b" [ Vdom.Node.text "Your" ]; Vdom.Node.text " Name" ]
+            (match String.lsplit2 Owner_profile.info.name ~on:' ' with
+             | None -> [ Vdom.Node.create "b" [ Vdom.Node.text Owner_profile.info.name ] ]
+             | Some (first, rest) ->
+               (* The first word in bold *)
+               [ Vdom.Node.create "b" [ Vdom.Node.text first ]
+               ; Vdom.Node.text [%string " %{rest}"]
+               ])
         ; Vdom.Node.button
             ~attrs:
               [ Vdom.Attr.class_ "navbar-toggler"
@@ -95,7 +101,8 @@ let footer ~year ~(current_user : Rpcs.Get_current_user.Response.t) ~log_out =
   Vdom.Node.create
     "nav"
     ~attrs:[ Vdom.Attr.class_ "footer" ]
-    [ Vdom.Node.p [ Vdom.Node.text [%string "© 2024 - %{year#Int} Your Name"] ]
+    [ Vdom.Node.p
+        [ Vdom.Node.text [%string "© 2024 - %{year#Int} %{Owner_profile.info.name}"] ]
     ; session_node
     ]
 ;;

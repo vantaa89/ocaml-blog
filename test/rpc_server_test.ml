@@ -105,6 +105,25 @@ let%expect_test "a post card shows the first [![](url)] of the post, English fir
   return ()
 ;;
 
+let%expect_test "the page carries the site's name and description" =
+  let%bind _response, page =
+    with_seeded_server ~f:(fun server -> Server_test_helpers.get server ~path:"/")
+  in
+  print_s
+    [%sexp
+      (String.is_substring
+         page
+         ~substring:[%string "<title>%{Owner_profile.info.name}</title>"]
+       : bool)
+    , (String.is_substring
+         page
+         ~substring:[%string {|content="%{Owner_profile.info.description}"|}]
+       : bool)
+    , (String.is_substring page ~substring:"{{" : bool)];
+  [%expect {| (true true false) |}];
+  return ()
+;;
+
 let%expect_test "the tag list reports how many posts carry each tag" =
   let%bind response =
     with_seeded_server ~f:(fun server ->

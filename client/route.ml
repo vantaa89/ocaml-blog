@@ -100,7 +100,7 @@ let with_page t page =
 ;;
 
 let title = function
-  | Home -> "Your Name"
+  | Home -> Owner_profile.info.name
   | Posts { tag = None; _ } -> "Posts"
   | Posts { tag = Some tag; _ } -> [%string "tag: %{tag}"]
   | Post { slug } -> slug

@@ -2,10 +2,6 @@ open! Core
 open! Import
 open Bonsai.Let_syntax
 
-let name = "Your Name"
-let short_desc = "A short line about you"
-let linkedin_url = "https://www.linkedin.com/in/your-account/"
-let github_url = "https://github.com/your-account/"
 let news_preview_count = 3
 
 let html_node ~tag ~attrs ~html =
@@ -24,7 +20,22 @@ let content_html (post : Rpcs.Post.t option) =
 
 (***** Home *****)
 
+let social_media_icon (social_media : Owner_profile.Social_media.t) =
+  let file =
+    match social_media with
+    | Github -> "github.svg"
+    | Linkedin -> "linkedin.png"
+    | Instagram -> "instagram.svg"
+    | Email -> "email.png"
+    | Cv -> "resume.png"
+  in
+  "/static/icons" ^/ file
+;;
+
 let profile_node =
+  let ({ name; description; profile_picture; links } : Owner_profile.t) =
+    Owner_profile.info
+  in
   Vdom.Node.div
     ~attrs:[ Vdom.Attr.id "main-profile"; Vdom.Attr.class_ "my-3" ]
     [ Vdom.Node.div
@@ -33,7 +44,7 @@ let profile_node =
             ~attrs:[ Vdom.Attr.class_ "main-profile-avatar" ]
             [ Vdom.Node.img
                 ~attrs:
-                  [ Vdom.Attr.src "/static/profile_pic.jpeg"
+                  [ Vdom.Attr.src profile_picture
                   ; Vdom.Attr.alt [%string "Profile photo of %{name}"]
                   ]
                 ()
@@ -43,16 +54,16 @@ let profile_node =
             [ Vdom.Node.text name ]
         ; Vdom.Node.h6
             ~attrs:[ Vdom.Attr.id "main-short-desc" ]
-            [ Vdom.Node.text short_desc ]
+            [ Vdom.Node.text description ]
         ; Vdom.Node.div
             ~attrs:[ Vdom.Attr.id "main-social-icons" ]
-            [ Vdom.Node.a
-                ~attrs:[ Vdom.Attr.class_ "social-icon"; Vdom.Attr.href linkedin_url ]
-                [ Vdom.Node.img ~attrs:[ Vdom.Attr.src "/static/icons/linkedin.png" ] () ]
-            ; Vdom.Node.a
-                ~attrs:[ Vdom.Attr.class_ "social-icon"; Vdom.Attr.href github_url ]
-                [ Vdom.Node.img ~attrs:[ Vdom.Attr.src "/static/icons/github.svg" ] () ]
-            ]
+            (List.map links ~f:(fun (social_media, url) ->
+               Vdom.Node.a
+                 ~attrs:[ Vdom.Attr.class_ "social-icon"; Vdom.Attr.href url ]
+                 [ Vdom.Node.img
+                     ~attrs:[ Vdom.Attr.src (social_media_icon social_media) ]
+                     ()
+                 ]))
         ]
     ]
 ;;

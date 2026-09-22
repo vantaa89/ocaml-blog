@@ -55,6 +55,29 @@ let serve_file ~docroot ~path =
   | `No | `Unknown -> Server.respond_string ~status:`Not_found "File not found"
 ;;
 
+let serve_index ~static_dir =
+  let file = static_dir ^/ "index.html" in
+  match%bind Sys.file_exists file with
+  | `No | `Unknown -> Server.respond_string ~status:`Not_found "File not found"
+  | `Yes ->
+    let%bind template = Reader.file_contents file in
+    let html =
+      List.fold
+        [ "{{name}}", Owner_profile.info.name
+        ; "{{description}}", Owner_profile.info.description
+        ]
+        ~init:template
+        ~f:(fun html (pattern, value) ->
+          (* [value] needs to be escaped *)
+          let escaped = Buffer.create (String.length value) in
+          Cmarkit_html.buffer_add_html_escaped_string escaped value;
+          String.substr_replace_all html ~pattern ~with_:(Buffer.contents escaped))
+    in
+    Server.respond_string
+      ~headers:(Cohttp.Header.of_list [ "content-type", "text/html; charset=utf-8" ])
+      html
+;;
+
 let serve ~time_source db (config : Config.t) =
   let authenticator = Authenticator.create ~config ~time_source in
   let http_handler (config : Config.t) () ~body _address request =
@@ -64,7 +87,7 @@ let serve ~time_source db (config : Config.t) =
       match Http_route.of_request ~meth ~path:(Uri.path uri) with
       | Media { path } -> serve_file ~docroot:config.media_dir ~path
       | Static { path } -> serve_file ~docroot:config.static_dir ~path
-      | Index -> serve_file ~docroot:config.static_dir ~path:"index.html"
+      | Index -> serve_index ~static_dir:config.static_dir
       | Login ->
         let now = Time_source.now time_source in
         Authenticator.login authenticator ~db ~now ~body request

@@ -9,6 +9,7 @@
   digestif
   uri
   pgx_async
+  cmarkit
   cohttp-async
   cohttp_async_websocket
   mirage-crypto-rng

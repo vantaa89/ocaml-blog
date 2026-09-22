@@ -1,6 +1,7 @@
 (library
  (name blog_test)
- (inline_tests)
+ (inline_tests
+  (deps ../static/index.html))
  (libraries
   core
   async

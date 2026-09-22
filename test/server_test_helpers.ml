@@ -18,7 +18,12 @@ let with_server db ~f =
     Web_server.serve
       ~time_source:(Time_source.read_only time_source)
       db
-      { Config.default with port = 0; media_dir }
+      { Config.default with
+        port = 0
+      ; (* Tests run in [_build/default/test] *)
+        static_dir = "../static"
+      ; media_dir
+      }
   in
   let%bind result = f { port = Cohttp_async.Server.listening_on server; time_source } in
   let%bind () = Cohttp_async.Server.close server in
