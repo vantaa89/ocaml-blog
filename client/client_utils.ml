@@ -143,8 +143,8 @@ let render_math_in_body () =
         [| ( "delimiters"
            , Js_of_ocaml.Js.Unsafe.inject
                (Js_of_ocaml.Js.array
-                  [| delimiter ~left:"$$" ~right:"$$" ~display:true
-                   ; delimiter ~left:"$" ~right:"$" ~display:false
+                  [| delimiter ~left:"\\[" ~right:"\\]" ~display:true
+                   ; delimiter ~left:"\\(" ~right:"\\)" ~display:false
                   |]) )
          ; "throwOnError", Js_of_ocaml.Js.Unsafe.inject (Js_of_ocaml.Js.bool false)
         |]
