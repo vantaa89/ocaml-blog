@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_DIR="/home/opc/ocaml-blog"
+APP_DIR="/opt/blog"
 SERVICE="blog"
 PROFILE="release"
 

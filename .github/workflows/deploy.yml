@@ -27,7 +27,7 @@ jobs:
           envs: BRANCH
           script: |
             export BRANCH='${{ vars.DEPLOY_BRANCH || 'main' }}'
-            cd /home/opc/ocaml-blog
+            cd /opt/blog
             git fetch origin "$BRANCH"
             git checkout -f "$BRANCH"
             git reset --hard "origin/$BRANCH"
