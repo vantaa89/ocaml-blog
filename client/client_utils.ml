@@ -91,51 +91,39 @@ let of_poll (poll : (_, 'response) Rpc_effect.Poll_result.t) ~f =
 ;;
 
 let paginator ~route ~page ~num_pages =
-  let item ?(active = false) target =
-    Vdom.Node.li
-      ~attrs:
-        [ Vdom.Attr.classes
-            ("paginator-item"
-             ::
-             (match active with
-              | true -> [ "active" ]
-              | false -> []))
+  (* A missing arrow keeps its place, so that the page number does not move. *)
+  let arrow ~target ~label text =
+    match target >= 1 && target <= num_pages with
+    | false ->
+      Vdom.Node.li
+        ~attrs:[ Vdom.Attr.classes [ "paginator-item"; "hidden" ] ]
+        [ Vdom.Node.text text ]
+    | true ->
+      Vdom.Node.li
+        ~attrs:[ Vdom.Attr.class_ "paginator-item" ]
+        [ link
+            ~attrs:[ Vdom.Attr.class_ "page-link"; Vdom.Attr.create "aria-label" label ]
+            (Route.with_page route target)
+            [ Vdom.Node.text text ]
         ]
-      [ link
-          ~attrs:[ Vdom.Attr.class_ "page-link" ]
-          (Route.with_page route target)
-          [ Vdom.Node.text (Int.to_string target) ]
+  in
+  let current =
+    Vdom.Node.li
+      ~attrs:[ Vdom.Attr.classes [ "paginator-item"; "active" ] ]
+      [ Vdom.Node.text (Int.to_string page) ]
+  in
+  match num_pages > 1 with
+  | false -> Vdom.Node.none
+  | true ->
+    Vdom.Node.create
+      "nav"
+      [ Vdom.Node.ul
+          ~attrs:[ Vdom.Attr.class_ "paginator justify-content-center" ]
+          [ arrow ~target:(page - 1) ~label:"Previous page" "◂"
+          ; current
+          ; arrow ~target:(page + 1) ~label:"Next page" "▸"
+          ]
       ]
-  in
-  let ellipsis =
-    Vdom.Node.li ~attrs:[ Vdom.Attr.class_ "paginator-item" ] [ Vdom.Node.text "⋯" ]
-  in
-  let before =
-    match page > 2 with
-    | true -> [ item 1; ellipsis ]
-    | false -> []
-  in
-  let previous =
-    match page > 1 with
-    | true -> [ item (page - 1) ]
-    | false -> []
-  in
-  let next =
-    match page < num_pages with
-    | true -> [ item (page + 1) ]
-    | false -> []
-  in
-  let after =
-    match page + 1 < num_pages with
-    | true -> [ ellipsis; item num_pages ]
-    | false -> []
-  in
-  Vdom.Node.create
-    "nav"
-    [ Vdom.Node.ul
-        ~attrs:[ Vdom.Attr.class_ "paginator justify-content-center" ]
-        (before @ previous @ [ item ~active:true page ] @ next @ after)
-    ]
 ;;
 
 let render_math_in_body () =

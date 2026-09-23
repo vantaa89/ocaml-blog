@@ -642,6 +642,10 @@ h1#title {
     border-width: 0;
 }
 
+.paginator .paginator-item.hidden{
+    visibility: hidden;
+}
+
 .paginator .paginator-item.active{
     background-color: var(--main-theme-color);
     color: white;
