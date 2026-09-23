@@ -2,7 +2,6 @@
 set -Eeuo pipefail
 
 APP_DIR="/home/opc/ocaml-blog"
-BRANCH="${BRANCH:-main}"
 SERVICE="blog"
 PROFILE="release"
 
@@ -16,11 +15,6 @@ if [[ ! -f owner_profile.sexp ]]; then
   log "owner_profile.sexp is missing; the build embeds it, so create it first"
   exit 1
 fi
-
-log "fetch latest code from origin/${BRANCH}"
-git fetch origin "$BRANCH"
-git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
 
 log "install dependencies"
 opam install --deps-only --yes .
