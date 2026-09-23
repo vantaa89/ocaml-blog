@@ -1,1 +1,35 @@
 (lang dune 3.0)
+(name blog)
+(generate_opam_files true)
+
+(package
+ (name blog)
+ (depends
+  (ocaml (>= 5.2))
+  (core (< v0.17))
+  (core_unix (< v0.17))
+  (async (< v0.17))
+  (async_js (< v0.17))
+  (async_kernel (< v0.17))
+  (async_rpc_kernel (< v0.17))
+  (async_rpc_websocket (< v0.17))
+  (bonsai (< v0.17))
+  (virtual_dom (< v0.17))
+  (cohttp_async_websocket (< v0.17))
+  (ppx_jane (< v0.17))
+  (ppx_string (< v0.17))
+  (expect_test_helpers_async (< v0.17))
+  (expect_test_helpers_core (< v0.17))
+  js_of_ocaml
+  js_of_ocaml-ppx
+  ppx_blob
+  argon2
+  base64
+  cmarkit
+  cohttp-async
+  digestif
+  mirage-crypto-rng
+  pgx_async
+  ptime
+  re
+  uri))
