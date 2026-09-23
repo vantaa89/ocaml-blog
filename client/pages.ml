@@ -566,11 +566,14 @@ let about =
       ~retry_interval:Rpc_client.retry_interval
       (Value.return ())
   in
+  (* The about post is written in HTML and shown as it is, not as markdown. *)
   let%sub html =
     let%arr poll = poll in
     match poll.last_ok_response with
     | None -> ""
-    | Some ((), post) -> content_html post
+    | Some ((), post) ->
+      Option.bind post ~f:(fun post -> Client_utils.primary_content post.content)
+      |> Option.value ~default:""
   in
   let%sub () = Client_utils.rerender_math_on_change html in
   let%arr poll = poll
