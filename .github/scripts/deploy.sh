@@ -20,7 +20,7 @@ log "install dependencies"
 opam install --deps-only --yes .
 
 log "build (profile: ${PROFILE})"
-opam exec -- dune build --profile "$PROFILE"
+opam exec -- dune build --profile "$PROFILE" bin/main.exe static/main.js
 
 log "create any missing tables"
 "$APP_DIR/_build/default/bin/main.exe" create-tables

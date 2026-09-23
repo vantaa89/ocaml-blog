@@ -2,5 +2,6 @@
  (name default)
  (deps
   (alias_rec runtest)
-  ; [dune build] also rebuilds the client bundle
+  ; [dune build] also rebuilds the server and the client bundle
+  bin/main.exe
   static/main.js))
