@@ -405,7 +405,7 @@ let editor ~(mode : Mode.t Value.t) ~(initial : Rpcs.Post_form.t Value.t) =
     | None -> ""
     | Some markdown -> Markdown_renderer.render ~markdown
   in
-  let%sub () = Client_utils.rerender_math_on_change preview in
+  let%sub () = Client_utils.rerender_on_change preview in
   let%sub create_post =
     Rpc_effect.Rpc.dispatcher
       Rpcs.Create_post.rpc

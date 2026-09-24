@@ -1,4 +1,5 @@
 open! Core
+open! Async_kernel
 open! Import
 
 val zone : Time_float.Zone.t
@@ -13,7 +14,6 @@ val primary_content : string Map.M(Language).t -> string option
 (** Number of posts shown per page. *)
 val page_size : int
 
-(** The slice of [items] belonging to the given one-based page. *)
 val paginate : 'a list -> page:int -> 'a list
 
 (** An [<a>] that navigates within the app instead of reloading the page. It still carries
@@ -22,7 +22,6 @@ val link : ?attrs:Vdom.Attr.t list -> Route.t -> Vdom.Node.t list -> Vdom.Node.t
 
 val tag_node : string -> Vdom.Node.t
 
-(** A post's card, as listed on the home page and on the post list pages. *)
 val post_card : Rpcs.Post_summary.t -> Vdom.Node.t
 
 val not_found_node : Vdom.Node.t
@@ -34,4 +33,5 @@ val of_poll
   -> Vdom.Node.t
 
 val paginator : route:Route.t -> page:int -> num_pages:int -> Vdom.Node.t
-val rerender_math_on_change : string Value.t -> unit Computation.t
+(** Runs KaTeX and highlight.js over the page once the given html has been painted. *)
+val rerender_on_change : string Value.t -> unit Computation.t

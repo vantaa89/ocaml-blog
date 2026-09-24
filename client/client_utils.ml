@@ -1,17 +1,18 @@
 open! Core
 open! Import
+open Bonsai.Let_syntax
 
 let words_per_minute = 150
+let zone = Time_float.Zone.of_utc_offset_explicit_name ~name:"KST" ~hours:9
 
-let format_date date =
+let format_time time =
+  (* Display only the date *)
+  let date = Time_ns.to_date time ~zone in
   let month = Date.month date |> Month.to_string in
   let day = Date.day date in
   let year = Date.year date in
   [%string "%{month} %{day#Int}, %{year#Int}"]
 ;;
-
-let zone = Time_float.Zone.of_utc_offset_explicit_name ~name:"KST" ~hours:9
-let format_time time = format_date (Time_ns.to_date time ~zone)
 
 let read_time markdown =
   let words =
@@ -53,7 +54,7 @@ let post_card
         Rpcs.Post_summary.t)
   =
   let route : Route.t = Post { slug } in
-  let languages = List.map languages ~f:Language.to_code |> String.concat ~sep:", " in
+  let languages = List.map languages ~f:Language.to_code |> String.concat ~sep:"/" in
   Vdom.Node.div
     ~attrs:[ Vdom.Attr.class_ "post-card" ]
     ([ link
@@ -158,20 +159,37 @@ let render_math_in_body () =
        : Js_of_ocaml.Js.Unsafe.any)
 ;;
 
-(* KaTeX has to run after the browser has painted the newly-rendered markdown, hence the
-   one-millisecond delay. *)
-let katex_effect =
-  Effect.of_deferred_fun (fun () ->
-    Async_kernel.Deferred.map
-      (Async_kernel.Clock_ns.after (Time_ns.Span.of_ms 1.))
-      ~f:render_math_in_body)
+let highlight_code_in_body () =
+  (* Refer to highlight.js as described in
+     https://highlightjs.readthedocs.io/en/latest/api.html *)
+  let open Js_of_ocaml in
+  let hljs = Js.Unsafe.global##.hljs in
+  match Js.Optdef.test hljs with
+  | false -> ()
+  | true ->
+    Dom_html.document##querySelectorAll (Js.string "pre code")
+    |> Dom.list_of_nodeList
+    |> List.iter ~f:(fun element ->
+      ignore (Js.Unsafe.meth_call hljs "highlightElement" [| Js.Unsafe.inject element |]))
 ;;
 
-let rerender_math_on_change (html : string Value.t) =
-  Bonsai.Edge.on_change
-    (module String)
-    html
-    ~callback:(Value.return (fun (_ : string) -> katex_effect ()))
+let rerender_on_change html =
+  let%sub rendered, set_rendered = Bonsai.state_opt (module String) in
+  let%sub callback =
+    let%arr html = html
+    and rendered = rendered
+    and set_rendered = set_rendered in
+    match [%equal: string option] rendered (Some html) with
+    | true -> None
+    | false ->
+      Some
+        (let%bind.Effect () = set_rendered (Some html) in
+         Effect.Many
+           [ Effect.of_sync_fun render_math_in_body ()
+           ; Effect.of_sync_fun highlight_code_in_body ()
+           ])
+  in
+  Bonsai.Edge.after_display' callback
 ;;
 
 (** [Post.content] is a map from language to markdown; English is the default. *)

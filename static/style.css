@@ -604,6 +604,7 @@ h1#title {
 }
 
 .post-detail-content pre {
+    line-height: 125%;
     background-color: var(--main-gray-color);
     padding: 10px;
 }
@@ -942,6 +943,7 @@ mark {
     font-weight: normal;
     padding: 0;
     border: none;
+    text-decoration: none;
 }
 
 .author-action:hover{

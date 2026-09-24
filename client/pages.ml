@@ -149,7 +149,7 @@ let home =
     | None -> ""
     | Some ((), response) -> content_html response.main_post
   in
-  let%sub () = Client_utils.rerender_math_on_change intro_html in
+  let%sub () = Client_utils.rerender_on_change intro_html in
   let%sub news_expanded, set_news_expanded =
     Bonsai.state (module Bool) ~default_model:false
   in
@@ -431,7 +431,7 @@ let post_detail ~slug =
        | None -> ""
        | Some markdown -> Markdown_renderer.render ~markdown)
   in
-  let%sub () = Client_utils.rerender_math_on_change html in
+  let%sub () = Client_utils.rerender_on_change html in
   let%sub current_user = Session.current_user in
   let%sub set_post_hidden =
     Rpc_effect.Rpc.dispatcher
@@ -457,7 +457,7 @@ let post_detail ~slug =
       let languages = Map.keys content in
       let post_time_node =
         let languages =
-          List.map languages ~f:Language.to_code |> String.concat ~sep:", "
+          List.map languages ~f:Language.to_code |> String.concat ~sep:"/"
         in
         let parts =
           List.filter_opt
@@ -575,7 +575,7 @@ let about =
       Option.bind post ~f:(fun post -> Client_utils.primary_content post.content)
       |> Option.value ~default:""
   in
-  let%sub () = Client_utils.rerender_math_on_change html in
+  let%sub () = Client_utils.rerender_on_change html in
   let%arr poll = poll
   and html = html in
   Client_utils.of_poll poll ~f:(fun (_ : Rpcs.Post.t option) ->
