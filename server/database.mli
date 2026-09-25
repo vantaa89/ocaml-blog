@@ -147,6 +147,9 @@ module News : sig
     -> Database_schema.News.t Deferred.Or_error.t
 
   val list : t -> Database_schema.News.t list Deferred.Or_error.t
+
+  (** Fails if there is no news with [id]. *)
+  val delete : t -> id:int -> unit Deferred.Or_error.t
 end
 
 module Session : sig

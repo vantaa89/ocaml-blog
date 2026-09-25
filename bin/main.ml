@@ -29,6 +29,7 @@ let command =
     [ "serve", serve_command
     ; "create-tables", create_tables_command
     ; "user", User_command.command
+    ; "news", News_command.command
     ]
 ;;
 

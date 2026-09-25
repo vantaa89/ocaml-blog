@@ -12,6 +12,7 @@ type t =
       ; post_tags : Database_schema.Post_tag.t list ref
       ; publication : Database_schema.Publication.t list ref
       ; news : Database_schema.News.t list ref
+      ; last_news_id : int ref
       ; sessions : Database_schema.Session.t list ref
       }
 
@@ -807,10 +808,9 @@ end
 module News = struct
   let create t ~content ~date =
     match t with
-    | Mock { news; _ } ->
-      let news_row : Database_schema.News.t =
-        { id = next_id !news ~id:(fun news -> news.id); content; date }
-      in
+    | Mock { news; last_news_id; _ } ->
+      incr last_news_id;
+      let news_row : Database_schema.News.t = { id = !last_news_id; content; date } in
       news := news_row :: !news;
       Deferred.Or_error.return news_row
     | Real { connection } ->
@@ -850,6 +850,29 @@ module News = struct
               "SELECT %{columns} FROM %{Database_schema.News.table} ORDER BY date DESC "]
         in
         List.map rows ~f:Database_schema.News.of_row)
+  ;;
+
+  let delete t ~id =
+    match t with
+    | Mock { news; _ } ->
+      (match List.exists !news ~f:(fun news -> news.id = id) with
+       | false -> Deferred.Or_error.error_s [%message "No such news" (id : int)]
+       | true ->
+         news := List.filter !news ~f:(fun news -> news.id <> id);
+         Deferred.Or_error.return ())
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let module Value = Pgx_async.Value in
+        let%map rows =
+          Pgx_async.execute
+            connection
+            ~params:[ Value.of_int id ]
+            [%string
+              "DELETE FROM %{Database_schema.News.table} WHERE id = $1 RETURNING id"]
+        in
+        match rows with
+        | [] -> raise_s [%message "No such news" (id : int)]
+        | _ :: _ -> ())
   ;;
 end
 
@@ -962,6 +985,8 @@ module For_testing = struct
       ; post_tags = ref post_tags
       ; publication = ref publication
       ; news = ref news
+      ; last_news_id =
+          ref (List.fold news ~init:0 ~f:(fun highest news -> Int.max highest news.id))
       ; sessions = ref sessions
       }
   ;;

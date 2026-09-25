@@ -117,6 +117,7 @@ module Op = struct
         }
     | Create_news of Test_string.t
     | List_news
+    | Delete_news of Ref.t
     | Create_publication of
         { authors : Test_string.t
         ; journal : Test_string.t
@@ -213,13 +214,13 @@ module Side = struct
     ; posts : int Queue.t
     ; tags : int Queue.t
     ; users : int Queue.t
+    ; news : int Queue.t
+      (* Postgres does not guarantee the order between the news of the same date for
+         [News.list] queries. Therefore, we make every news item get a distinct date,
+         derived from how many were created so that both sides agree. *)
     ; author_id : int
     ; image_id : int
     ; now : Time_ns.t
-    ; news_count : int ref
-      (* Postgres does not guarantee the order between the news of the same date for
-         [News.list] queries. Therefore, we make every news item get a distinct date,
-         derived from how many exist so that both sides agree. *)
     }
 
   let ref_of_id queue id : Ref.t =
@@ -282,10 +283,10 @@ module Side = struct
     ; posts = Queue.create ()
     ; tags = Queue.create ()
     ; users = Queue.of_list [ author.id ]
+    ; news = Queue.create ()
     ; author_id = author.id
     ; image_id = image.id
     ; now
-    ; news_count = ref 0
     }
   ;;
 end
@@ -389,17 +390,21 @@ let run_op (side : Side.t) (op : Op.t) =
       in
       Response.Posts (List.map posts ~f:(Side.post_ref side))
     | Create_news content ->
-      incr side.news_count;
-      let date = Date.add_days (Date.of_string "2024-01-01") !(side.news_count) in
-      let%map (_ : Database_schema.News.t) =
-        Database.News.create side.db ~content ~date
-      in
+      let date = Date.add_days (Date.of_string "2024-01-01") (Queue.length side.news) in
+      let%map news = Database.News.create side.db ~content ~date in
+      Queue.enqueue side.news news.id;
       Response.Unit
     | List_news ->
       let%map news = Database.News.list side.db in
       Response.News
         (List.map news ~f:(fun (news : Database_schema.News.t) : Observed.News.t ->
            { content = news.content; date = news.date }))
+    | Delete_news index ->
+      (match Side.resolve side.news index with
+       | None -> return Response.Skipped
+       | Some id ->
+         let%map () = Database.News.delete side.db ~id in
+         Response.Unit)
     | Create_publication { authors; journal; link } ->
       let%map (_ : Database_schema.Publication.t) =
         Database.Publication.create
