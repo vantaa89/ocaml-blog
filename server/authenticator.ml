@@ -46,7 +46,11 @@ let respond_internal_error error =
     "Internal server error"
 ;;
 
-let login t ~db ~now ~body _request =
+let login t ~db ~now ~body request =
+  (* Behind a reverse proxy, only this header knows the client. *)
+  let forwarded_for =
+    Cohttp.Header.get (Cohttp.Request.headers request) "x-forwarded-for"
+  in
   let%bind body = Cohttp_async.Body.to_string body in
   let field name =
     let form = Uri.query_of_encoded body in
@@ -62,6 +66,11 @@ let login t ~db ~now ~body _request =
   | Some (username, password) ->
     (match Rate_limiter.record_attempt t.login_attempts ~key:username with
      | `Too_many ->
+       Log.Global.info_s
+         [%message
+           "Login refused after too many attempts"
+             (username : string)
+             (forwarded_for : string option)];
        Cohttp_async.Server.respond_string
          ~status:`Too_many_requests
          "Too many login attempts; try again later"
@@ -108,10 +117,14 @@ let login t ~db ~now ~body _request =
        (match%bind logged_in with
         | Error error -> respond_internal_error error
         | Ok `Denied ->
+          Log.Global.info_s
+            [%message "Login failed" (username : string) (forwarded_for : string option)];
           Cohttp_async.Server.respond_string
             ~status:`Unauthorized
             "Invalid username or password"
         | Ok (`Logged_in token) ->
+          Log.Global.info_s
+            [%message "Logged in" (username : string) (forwarded_for : string option)];
           Rate_limiter.clear t.login_attempts ~key:username;
           Cohttp_async.Server.respond
             ~headers:(session_cookie ~value:token ~max_age:session_span)
