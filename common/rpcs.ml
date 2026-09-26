@@ -1,5 +1,5 @@
 open! Core
-open! Import
+open! Async_rpc_kernel
 
 (** [Time_ns.Stable.Alternate_sexp.V1] does not export [equal], which Bonsai's [Model]
     signature requires of every type stored in client-side state. *)

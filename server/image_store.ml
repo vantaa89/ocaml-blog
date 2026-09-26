@@ -25,9 +25,8 @@ let save ~media_dir ~date ~content =
      | None -> Deferred.Or_error.return `Unsupported_format
      | Some extension ->
        let hash =
-         Digestif.SHA256.digest_string content
-         |> Digestif.SHA256.to_hex
-         |> fun hex -> String.prefix hex 16
+         let hex = Digestif.SHA256.digest_string content |> Digestif.SHA256.to_hex in
+         String.prefix hex 16
        in
        let filename = [%string "%{hash}.%{extension}"] in
        Deferred.Or_error.try_with (fun () ->

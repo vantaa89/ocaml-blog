@@ -18,6 +18,7 @@ module type Table = sig
   val columns : string list
   val create_sql : string list
   val of_row : Pgx.Value.t list -> t
+  val to_row : t -> Pgx.Value.t list
 end
 
 module User = struct
@@ -49,6 +50,18 @@ module User = struct
            | Some _ -> Some (time_ns_of_value_exn last_login))
       }
     | _ -> raise_s [%message "Unexpected row shape for User" (row : Value.t list)]
+  ;;
+
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list
+      ~id:(value Value.of_int)
+      ~username:(value Value.of_string)
+      ~email:(value Value.of_string)
+      ~password_hash:(value Value.of_string)
+      ~date_joined:(value Value.of_date)
+      ~last_login:(value (Value.opt value_of_time_ns))
   ;;
 
   let create_sql =
@@ -90,6 +103,15 @@ module Image = struct
     | _ -> raise_s [%message "Unexpected row shape for Image" (row : Value.t list)]
   ;;
 
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list
+      ~id:(value Value.of_int)
+      ~filename:(value Value.of_string)
+      ~date:(value Value.of_date)
+  ;;
+
   let create_sql =
     [ [%string
         {sql|
@@ -118,6 +140,12 @@ module Tag = struct
     match row with
     | [ id; name ] -> { id = Value.to_int_exn id; name = Value.to_string_exn name }
     | _ -> raise_s [%message "Unexpected row shape for Tag" (row : Value.t list)]
+  ;;
+
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list ~id:(value Value.of_int) ~name:(value Value.of_string)
   ;;
 
   let create_sql =
@@ -186,6 +214,21 @@ module Post = struct
     | _ -> raise_s [%message "Unexpected row shape for Post" (row : Value.t list)]
   ;;
 
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list
+      ~id:(value Value.of_int)
+      ~title:(value Value.of_string)
+      ~slug:(value Value.of_string)
+      ~content_en:(value (Value.opt Value.of_string))
+      ~content_ko:(value (Value.opt Value.of_string))
+      ~author_id:(value Value.of_int)
+      ~created_at:(value value_of_time_ns)
+      ~special_post:(value Value.of_bool)
+      ~hidden:(value Value.of_bool)
+  ;;
+
   let create_sql =
     [ [%string
         {sql|
@@ -235,6 +278,19 @@ module Publication = struct
     | _ -> raise_s [%message "Unexpected row shape for Publication" (row : Value.t list)]
   ;;
 
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list
+      ~id:(value Value.of_int)
+      ~title:(value Value.of_string)
+      ~image_id:(value Value.of_int)
+      ~authors:(value Value.of_string)
+      ~journal:(value Value.of_string)
+      ~link:(value (Value.opt Value.of_string))
+      ~hidden:(value Value.of_bool)
+  ;;
+
   let create_sql =
     [ [%string
         {sql|
@@ -274,6 +330,15 @@ module News = struct
     | _ -> raise_s [%message "Unexpected row shape for News" (row : Value.t list)]
   ;;
 
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list
+      ~id:(value Value.of_int)
+      ~content:(value Value.of_string)
+      ~date:(value Value.of_date)
+  ;;
+
   let create_sql =
     [ [%string
         {sql|
@@ -309,6 +374,15 @@ module Session = struct
     | _ -> raise_s [%message "Unexpected row shape for Session" (row : Value.t list)]
   ;;
 
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list
+      ~token_hash:(value Value.of_string)
+      ~user_id:(value Value.of_int)
+      ~expires_at:(value value_of_time_ns)
+  ;;
+
   (* Needs secondary index based on [expires_at] to sweep expired sessions *)
   let create_sql =
     [ [%string
@@ -341,6 +415,12 @@ module Post_tag = struct
     | [ post_id; tag_id ] ->
       { post_id = Value.to_int_exn post_id; tag_id = Value.to_int_exn tag_id }
     | _ -> raise_s [%message "Unexpected row shape for Post_tag" (row : Value.t list)]
+  ;;
+
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list ~post_id:(value Value.of_int) ~tag_id:(value Value.of_int)
   ;;
 
   (* Needs secondary index based on [tag_id] *)

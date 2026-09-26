@@ -14,6 +14,7 @@ module type Table = sig
   val columns : string list
   val create_sql : string list
   val of_row : Pgx.Value.t list -> t
+  val to_row : t -> Pgx.Value.t list
 end
 
 module User : sig

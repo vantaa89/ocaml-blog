@@ -41,28 +41,78 @@ let create_tables t =
         Pgx_async.execute_unit connection sql))
 ;;
 
+let insert
+      (type row)
+      (module Table : Database_schema.Table with type t = row)
+      connection
+      ~(row : id:int -> row)
+  =
+  Deferred.Or_error.try_with (fun () ->
+    let columns, values =
+      List.zip_exn Table.columns (Table.to_row (row ~id:0))
+      |> List.filter ~f:(fun (column, _) -> not (String.equal column "id"))
+      |> List.unzip
+    in
+    let num_params = List.length values in
+    let placeholders =
+      List.init ~f:Fn.id num_params
+      |> List.map ~f:(fun i -> "$" ^ Int.to_string (i + 1))
+      |> String.concat ~sep:", "
+    in
+    let columns = String.concat ~sep:", " columns in
+    let%map rows =
+      Pgx_async.execute
+        connection
+        ~params:values
+        [%string
+          "INSERT INTO %{Table.table} (%{columns}) VALUES (%{placeholders}) RETURNING id"]
+    in
+    match rows with
+    | [ [ id ] ] -> row ~id:(Pgx_async.Value.to_int_exn id)
+    | rows ->
+      raise_s
+        [%message
+          "Unexpected result from insert"
+            ~table:(Table.table : string)
+            (rows : Pgx_async.Value.t list list)])
+;;
+
+let find_unique
+      (type row)
+      (module Table : Database_schema.Table with type t = row)
+      connection
+      ~where
+      ~param
+  =
+  Deferred.Or_error.try_with (fun () ->
+    let columns = String.concat ~sep:", " Table.columns in
+    let%map rows =
+      Pgx_async.execute
+        connection
+        ~params:[ param ]
+        [%string "SELECT %{columns} FROM %{Table.table} WHERE %{where}"]
+    in
+    Utils.expect_at_most_one rows ~error_message:(fun rows ->
+      [%message
+        "Expected at most one row"
+          ~table:(Table.table : string)
+          (where : string)
+          ~count:(List.length rows : int)])
+    |> Option.map ~f:Table.of_row)
+;;
+
 module Post = struct
   let find_by_slug t ~slug =
-    Deferred.Or_error.try_with (fun () ->
-      let%map matching_posts =
-        match t with
-        | Mock { posts; _ } ->
-          Deferred.return
-            (List.filter !posts ~f:(fun post -> String.equal post.slug slug))
-        | Real { connection } ->
-          let module Value = Pgx_async.Value in
-          let columns = String.concat ~sep:", " Database_schema.Post.columns in
-          let%map rows =
-            Pgx_async.execute
-              connection
-              ~params:[ Value.of_string slug ]
-              [%string
-                "SELECT %{columns} FROM %{Database_schema.Post.table} WHERE slug = $1"]
-          in
-          List.map rows ~f:Database_schema.Post.of_row
-      in
-      Utils.expect_at_most_one matching_posts ~error_message:(fun _ ->
-        [%message "Expected at most one post for slug" (slug : string)]))
+    match t with
+    | Mock { posts; _ } ->
+      List.find !posts ~f:(fun post -> String.equal post.slug slug)
+      |> Deferred.Or_error.return
+    | Real { connection } ->
+      find_unique
+        (module Database_schema.Post)
+        connection
+        ~where:"slug = $1"
+        ~param:(Pgx_async.Value.of_string slug)
   ;;
 
   let find_by_id t ~id =
@@ -70,18 +120,11 @@ module Post = struct
     | Mock { posts; _ } ->
       List.find !posts ~f:(fun post -> post.id = id) |> Deferred.Or_error.return
     | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let columns = String.concat ~sep:", " Database_schema.Post.columns in
-        let%map rows =
-          Pgx_async.execute
-            connection
-            ~params:[ Value.of_int id ]
-            [%string "SELECT %{columns} FROM %{Database_schema.Post.table} WHERE id = $1"]
-        in
-        Utils.expect_at_most_one rows ~error_message:(fun _ ->
-          [%message "Expected at most one post for id" (id : int)])
-        |> Option.map ~f:Database_schema.Post.of_row)
+      find_unique
+        (module Database_schema.Post)
+        connection
+        ~where:"id = $1"
+        ~param:(Pgx_async.Value.of_int id)
   ;;
 
   (* A hidden post belongs to its author alone. *)
@@ -96,18 +139,18 @@ module Post = struct
   let list t ~viewer ?limit ?(offset = 0) () =
     match t with
     | Mock { posts; _ } ->
-      !posts
-      |> List.filter ~f:(fun post -> (not post.special_post) && visible_to ~viewer post)
-      |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
-      |> (fun posts -> List.drop posts offset)
-      |> (fun posts ->
-      match limit with
-      | None -> posts
-      | Some limit -> List.take posts limit)
-      |> Deferred.Or_error.return
+      let posts =
+        List.filter !posts ~f:(fun post ->
+          (not post.special_post) && visible_to ~viewer post)
+        |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
+        |> Fn.flip List.drop offset
+      in
+      Deferred.Or_error.return
+        (match limit with
+         | None -> posts
+         | Some limit -> List.take posts limit)
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let limit_clause =
           match limit with
           | None -> ""
@@ -117,7 +160,7 @@ module Post = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.opt Value.of_int viewer ]
+            ~params:[ Pgx_async.Value.opt Pgx_async.Value.of_int viewer ]
             [%string
               "SELECT %{columns} FROM %{Database_schema.Post.table} WHERE NOT \
                special_post AND %{visible_sql ~prefix:\"\" ~param:1} ORDER BY created_at \
@@ -141,19 +184,20 @@ module Post = struct
              | false -> None)
            |> Int.Set.of_list
          in
-         !posts
-         |> List.filter ~f:(fun post ->
-           Set.mem post_ids post.id && (not post.special_post) && visible_to ~viewer post)
-         |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
-         |> (fun posts -> List.drop posts offset)
-         |> (fun posts ->
-         match limit with
-         | None -> posts
-         | Some limit -> List.take posts limit)
-         |> Deferred.Or_error.return)
+         let posts =
+           List.filter !posts ~f:(fun post ->
+             Set.mem post_ids post.id
+             && (not post.special_post)
+             && visible_to ~viewer post)
+           |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
+           |> Fn.flip List.drop offset
+         in
+         Deferred.Or_error.return
+           (match limit with
+            | None -> posts
+            | Some limit -> List.take posts limit))
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let where =
           [%string "AND NOT p.special_post AND %{visible_sql ~prefix:\"p.\" ~param:2}"]
         in
@@ -170,7 +214,10 @@ module Post = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_string tag; Value.opt Value.of_int viewer ]
+            ~params:
+              [ Pgx_async.Value.of_string tag
+              ; Pgx_async.Value.opt Pgx_async.Value.of_int viewer
+              ]
             [%string
               "SELECT %{columns} FROM %{Database_schema.Post.table} p JOIN \
                %{Database_schema.Post_tag.table} pt ON p.id = pt.post_id JOIN \
@@ -195,17 +242,16 @@ module Post = struct
             || matches post.content_en
             || matches post.content_ko))
       |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
-      |> (fun posts -> List.take posts limit)
+      |> Fn.flip List.take limit
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let pattern = [%string "%%%{query}%%"] in
         let columns = String.concat ~sep:", " Database_schema.Post.columns in
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_string pattern; Value.of_int limit ]
+            ~params:[ Pgx_async.Value.of_string pattern; Pgx_async.Value.of_int limit ]
             [%string
               "SELECT %{columns} FROM %{Database_schema.Post.table} WHERE NOT \
                special_post AND NOT hidden AND (title ILIKE $1 OR content_en ILIKE $1 OR \
@@ -225,14 +271,25 @@ module Post = struct
       Deferred.Or_error.return ()
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         Pgx_async.execute_unit
           connection
-          ~params:[ Value.of_bool hidden; Value.of_int id ]
+          ~params:[ Pgx_async.Value.of_bool hidden; Pgx_async.Value.of_int id ]
           [%string "UPDATE %{Database_schema.Post.table} SET hidden = $1 WHERE id = $2"])
   ;;
 
   let create t ~title ~slug ~content_en ~content_ko ~author_id ~special_post ~now =
+    let row ~id : Database_schema.Post.t =
+      { id
+      ; title
+      ; slug
+      ; content_en
+      ; content_ko
+      ; author_id
+      ; created_at = now
+      ; special_post
+      ; hidden = false
+      }
+    in
     match t with
     | Mock { posts; _ } ->
       (match is_unique !posts ~field:(fun post -> post.slug) ~value:slug with
@@ -241,63 +298,10 @@ module Post = struct
            (Or_error.error_s
               [%message "duplicate key value violates unique constraint" (slug : string)])
        | true ->
-         let post : Database_schema.Post.t =
-           { id = next_id !posts ~id:(fun post -> post.id)
-           ; title
-           ; slug
-           ; content_en
-           ; content_ko
-           ; author_id
-           ; created_at = now
-           ; special_post
-           ; hidden = false
-           }
-         in
+         let post = row ~id:(next_id !posts ~id:(fun post -> post.id)) in
          posts := post :: !posts;
          Deferred.Or_error.return post)
-    | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let hidden = false in
-        let params =
-          [ Value.of_string title
-          ; Value.of_string slug
-          ; Value.opt Value.of_string content_en
-          ; Value.opt Value.of_string content_ko
-          ; Value.of_int author_id
-          ; Database_schema.value_of_time_ns now
-          ; Value.of_bool special_post
-          ; Value.of_bool hidden
-          ]
-        in
-        let%map result =
-          Pgx_async.execute
-            connection
-            ~params
-            [%string
-              {sql|
-          INSERT INTO %{Database_schema.Post.table}
-            (title, slug, content_en, content_ko, author_id, created_at, special_post, hidden)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          RETURNING id
-          |sql}]
-        in
-        match result with
-        | [ [ id_value ] ] ->
-          ({ id = Value.to_int_exn id_value
-           ; title
-           ; slug
-           ; content_en
-           ; content_ko
-           ; author_id
-           ; created_at = now
-           ; special_post
-           ; hidden
-           }
-           : Database_schema.Post.t)
-        | ([] | [ _ :: _ ] | _ :: _) as rows ->
-          raise_s
-            [%message "Unexpected result from Post insert" (rows : Value.t list list)])
+    | Real { connection } -> insert (module Database_schema.Post) connection ~row
   ;;
 
   let update t ~id ~title ~slug ~content_en ~content_ko ~special_post =
@@ -320,14 +324,13 @@ module Post = struct
          Deferred.Or_error.return ())
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let params =
-          [ Value.of_string title
-          ; Value.of_string slug
-          ; Value.opt Value.of_string content_en
-          ; Value.opt Value.of_string content_ko
-          ; Value.of_bool special_post
-          ; Value.of_int id
+          [ Pgx_async.Value.of_string title
+          ; Pgx_async.Value.of_string slug
+          ; Pgx_async.Value.opt Pgx_async.Value.of_string content_en
+          ; Pgx_async.Value.opt Pgx_async.Value.of_string content_ko
+          ; Pgx_async.Value.of_bool special_post
+          ; Pgx_async.Value.of_int id
           ]
         in
         Pgx_async.execute_unit
@@ -344,6 +347,9 @@ end
 
 module User = struct
   let create t ~username ~email ~password_hash ~date_joined =
+    let row ~id : Database_schema.User.t =
+      { id; username; email; password_hash; date_joined; last_login = None }
+    in
     match t with
     | Mock { users; _ } ->
       (match
@@ -358,49 +364,10 @@ module User = struct
                   (username : string)
                   (email : string)])
        | true ->
-         let user : Database_schema.User.t =
-           { id = next_id !users ~id:(fun (user : Database_schema.User.t) -> user.id)
-           ; username
-           ; email
-           ; password_hash
-           ; date_joined
-           ; last_login = None
-           }
-         in
+         let user = row ~id:(next_id !users ~id:(fun user -> user.id)) in
          users := user :: !users;
          Deferred.Or_error.return user)
-    | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let%map result =
-          Pgx_async.execute
-            connection
-            ~params:
-              [ Value.of_string username
-              ; Value.of_string email
-              ; Value.of_string password_hash
-              ; Value.of_date date_joined
-              ]
-            [%string
-              {sql|
-            INSERT INTO %{Database_schema.User.table} (username, email, password_hash, date_joined)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id
-            |sql}]
-        in
-        match result with
-        | [ [ id_value ] ] ->
-          ({ id = Value.to_int_exn id_value
-           ; username
-           ; email
-           ; password_hash
-           ; date_joined
-           ; last_login = None
-           }
-           : Database_schema.User.t)
-        | rows ->
-          raise_s
-            [%message "Unexpected result from User insert" (rows : Value.t list list)])
+    | Real { connection } -> insert (module Database_schema.User) connection ~row
   ;;
 
   let find_by_id t ~id =
@@ -408,18 +375,11 @@ module User = struct
     | Mock { users; _ } ->
       List.find !users ~f:(fun user -> user.id = id) |> Deferred.Or_error.return
     | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let columns = String.concat ~sep:", " Database_schema.User.columns in
-        let%map rows =
-          Pgx_async.execute
-            connection
-            ~params:[ Value.of_int id ]
-            [%string "SELECT %{columns} FROM %{Database_schema.User.table} WHERE id = $1"]
-        in
-        Utils.expect_at_most_one rows ~error_message:(fun _ ->
-          [%message "Expected at most one user for id" (id : int)])
-        |> Option.map ~f:Database_schema.User.of_row)
+      find_unique
+        (module Database_schema.User)
+        connection
+        ~where:"id = $1"
+        ~param:(Pgx_async.Value.of_int id)
   ;;
 
   let list t =
@@ -449,10 +409,12 @@ module User = struct
       Deferred.Or_error.return ()
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         Pgx_async.execute_unit
           connection
-          ~params:[ Value.of_string password_hash; Value.of_string username ]
+          ~params:
+            [ Pgx_async.Value.of_string password_hash
+            ; Pgx_async.Value.of_string username
+            ]
           [%string
             "UPDATE %{Database_schema.User.table} SET password_hash = $1 WHERE username \
              = $2"])
@@ -469,11 +431,12 @@ module User = struct
       Deferred.Or_error.return ()
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         Pgx_async.execute_unit
           connection
           ~params:
-            [ Database_schema.value_of_time_ns last_login; Value.of_string username ]
+            [ Database_schema.value_of_time_ns last_login
+            ; Pgx_async.Value.of_string username
+            ]
           [%string
             "UPDATE %{Database_schema.User.table} SET last_login = $1 WHERE username = $2"])
   ;;
@@ -486,10 +449,9 @@ module User = struct
       Deferred.Or_error.return ()
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         Pgx_async.execute_unit
           connection
-          ~params:[ Value.of_string username ]
+          ~params:[ Pgx_async.Value.of_string username ]
           [%string "DELETE FROM %{Database_schema.User.table} WHERE username = $1"])
   ;;
 
@@ -499,51 +461,23 @@ module User = struct
       List.find !users ~f:(fun user -> String.equal user.username username)
       |> Deferred.Or_error.return
     | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let columns = String.concat ~sep:", " Database_schema.User.columns in
-        let%map rows =
-          Pgx_async.execute
-            connection
-            ~params:[ Value.of_string username ]
-            [%string
-              "SELECT %{columns} FROM %{Database_schema.User.table} WHERE username = $1"]
-        in
-        Utils.expect_at_most_one rows ~error_message:(fun _ ->
-          [%message "Expected at most one user for username" (username : string)])
-        |> Option.map ~f:Database_schema.User.of_row)
+      find_unique
+        (module Database_schema.User)
+        connection
+        ~where:"username = $1"
+        ~param:(Pgx_async.Value.of_string username)
   ;;
 end
 
 module Image = struct
   let create t ~filename ~date =
+    let row ~id : Database_schema.Image.t = { id; filename; date } in
     match t with
     | Mock { images; _ } ->
-      let image : Database_schema.Image.t =
-        { id = next_id !images ~id:(fun image -> image.id); filename; date }
-      in
+      let image = row ~id:(next_id !images ~id:(fun image -> image.id)) in
       images := image :: !images;
       Deferred.Or_error.return image
-    | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let%map result =
-          Pgx_async.execute
-            connection
-            ~params:[ Value.of_string filename; Value.of_date date ]
-            [%string
-              {sql|
-            INSERT INTO %{Database_schema.Image.table} (filename, date)
-            VALUES ($1, $2)
-            RETURNING id
-            |sql}]
-        in
-        match result with
-        | [ [ id_value ] ] ->
-          ({ id = Value.to_int_exn id_value; filename; date } : Database_schema.Image.t)
-        | rows ->
-          raise_s
-            [%message "Unexpected result from Image insert" (rows : Value.t list list)])
+    | Real { connection } -> insert (module Database_schema.Image) connection ~row
   ;;
 
   let find_by_id t ~id =
@@ -551,19 +485,11 @@ module Image = struct
     | Mock { images; _ } ->
       List.find !images ~f:(fun image -> image.id = id) |> Deferred.Or_error.return
     | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let columns = String.concat ~sep:", " Database_schema.Image.columns in
-        let%map rows =
-          Pgx_async.execute
-            connection
-            ~params:[ Value.of_int id ]
-            [%string
-              "SELECT %{columns} FROM %{Database_schema.Image.table} WHERE id = $1"]
-        in
-        Utils.expect_at_most_one rows ~error_message:(fun _ ->
-          [%message "Expected at most one image for id" (id : int)])
-        |> Option.map ~f:Database_schema.Image.of_row)
+      find_unique
+        (module Database_schema.Image)
+        connection
+        ~where:"id = $1"
+        ~param:(Pgx_async.Value.of_int id)
   ;;
 end
 
@@ -574,20 +500,11 @@ module Tag = struct
       List.find !tags ~f:(fun tag -> String.Caseless.equal tag.name name)
       |> Deferred.Or_error.return
     | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let columns = String.concat ~sep:", " Database_schema.Tag.columns in
-        let%map rows =
-          Pgx_async.execute
-            connection
-            ~params:[ Value.of_string name ]
-            [%string
-              "SELECT %{columns} FROM %{Database_schema.Tag.table} WHERE lower(name) = \
-               lower($1)"]
-        in
-        Utils.expect_at_most_one rows ~error_message:(fun _ ->
-          [%message "Expected at most one tag for name" (name : string)])
-        |> Option.map ~f:Database_schema.Tag.of_row)
+      find_unique
+        (module Database_schema.Tag)
+        connection
+        ~where:"lower(name) = lower($1)"
+        ~param:(Pgx_async.Value.of_string name)
   ;;
 
   let find_or_create t ~name =
@@ -603,11 +520,10 @@ module Tag = struct
          Deferred.Or_error.return tag)
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_string name ]
+            ~params:[ Pgx_async.Value.of_string name ]
             [%string
               {sql|
             INSERT INTO %{Database_schema.Tag.table} (name)
@@ -620,7 +536,8 @@ module Tag = struct
         | [ row ] -> Database_schema.Tag.of_row row
         | rows ->
           raise_s
-            [%message "Unexpected result from Tag upsert" (rows : Value.t list list)])
+            [%message
+              "Unexpected result from Tag upsert" (rows : Pgx_async.Value.t list list)])
   ;;
 
   (** Tags that are attached to at least one post, most-used first. *)
@@ -637,7 +554,6 @@ module Tag = struct
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let%map rows =
           Pgx_async.execute
             connection
@@ -653,9 +569,11 @@ module Tag = struct
         List.map rows ~f:(fun row ->
           match row with
           | [ id; name; count ] ->
-            Database_schema.Tag.of_row [ id; name ], Value.to_int_exn count
+            Database_schema.Tag.of_row [ id; name ], Pgx_async.Value.to_int_exn count
           | _ ->
-            raise_s [%message "Unexpected row shape for Tag count" (row : Value.t list)]))
+            raise_s
+              [%message
+                "Unexpected row shape for Tag count" (row : Pgx_async.Value.t list)]))
   ;;
 end
 
@@ -675,12 +593,11 @@ module Post_tag = struct
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let columns = String.concat ~sep:", " Database_schema.Tag.columns in
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_int post_id ]
+            ~params:[ Pgx_async.Value.of_int post_id ]
             [%string
               "SELECT %{columns} FROM %{Database_schema.Tag.table} JOIN \
                %{Database_schema.Post_tag.table} ON %{Database_schema.Tag.table}.id = \
@@ -706,18 +623,17 @@ module Post_tag = struct
       Deferred.Or_error.return ()
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         Pgx_async.with_transaction connection (fun connection ->
           let%bind () =
             Pgx_async.execute_unit
               connection
-              ~params:[ Value.of_int post_id ]
+              ~params:[ Pgx_async.Value.of_int post_id ]
               [%string "DELETE FROM %{Database_schema.Post_tag.table} WHERE post_id = $1"]
           in
           Deferred.List.iter tag_ids ~how:`Sequential ~f:(fun tag_id ->
             Pgx_async.execute_unit
               connection
-              ~params:[ Value.of_int post_id; Value.of_int tag_id ]
+              ~params:[ Pgx_async.Value.of_int post_id; Pgx_async.Value.of_int tag_id ]
               [%string
                 "INSERT INTO %{Database_schema.Post_tag.table} (post_id, tag_id) VALUES \
                  ($1, $2)"])))
@@ -726,57 +642,17 @@ end
 
 module Publication = struct
   let create t ~title ~image_id ~authors ~journal ~link =
+    let row ~id : Database_schema.Publication.t =
+      { id; title; image_id; authors; journal; link; hidden = false }
+    in
     match t with
     | Mock { publication; _ } ->
-      let publication_row : Database_schema.Publication.t =
-        { id = next_id !publication ~id:(fun publication -> publication.id)
-        ; title
-        ; image_id
-        ; authors
-        ; journal
-        ; link
-        ; hidden = false
-        }
+      let publication_row =
+        row ~id:(next_id !publication ~id:(fun publication -> publication.id))
       in
       publication := publication_row :: !publication;
       Deferred.Or_error.return publication_row
-    | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let hidden = false in
-        let%map result =
-          Pgx_async.execute
-            connection
-            ~params:
-              [ Value.of_string title
-              ; Value.of_int image_id
-              ; Value.of_string authors
-              ; Value.of_string journal
-              ; Value.opt Value.of_string link
-              ; Value.of_bool hidden
-              ]
-            [%string
-              {sql|
-            INSERT INTO %{Database_schema.Publication.table} (title, image_id, authors, journal, link, hidden)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id
-            |sql}]
-        in
-        match result with
-        | [ [ id_value ] ] ->
-          ({ id = Value.to_int_exn id_value
-           ; title
-           ; image_id
-           ; authors
-           ; journal
-           ; link
-           ; hidden
-           }
-           : Database_schema.Publication.t)
-        | rows ->
-          raise_s
-            [%message
-              "Unexpected result from Publication insert" (rows : Value.t list list)])
+    | Real { connection } -> insert (module Database_schema.Publication) connection ~row
   ;;
 
   let list t ?(include_hidden = false) () =
@@ -807,32 +683,14 @@ end
 
 module News = struct
   let create t ~content ~date =
+    let row ~id : Database_schema.News.t = { id; content; date } in
     match t with
     | Mock { news; last_news_id; _ } ->
       incr last_news_id;
-      let news_row : Database_schema.News.t = { id = !last_news_id; content; date } in
+      let news_row = row ~id:!last_news_id in
       news := news_row :: !news;
       Deferred.Or_error.return news_row
-    | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let%map result =
-          Pgx_async.execute
-            connection
-            ~params:[ Value.of_string content; Value.of_date date ]
-            [%string
-              {sql|
-            INSERT INTO %{Database_schema.News.table} (content, date)
-            VALUES ($1, $2)
-            RETURNING id
-            |sql}]
-        in
-        match result with
-        | [ [ id_value ] ] ->
-          ({ id = Value.to_int_exn id_value; content; date } : Database_schema.News.t)
-        | rows ->
-          raise_s
-            [%message "Unexpected result from News insert" (rows : Value.t list list)])
+    | Real { connection } -> insert (module Database_schema.News) connection ~row
   ;;
 
   let list t =
@@ -862,11 +720,10 @@ module News = struct
          Deferred.Or_error.return ())
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Value.of_int id ]
+            ~params:[ Pgx_async.Value.of_int id ]
             [%string
               "DELETE FROM %{Database_schema.News.table} WHERE id = $1 RETURNING id"]
         in
@@ -894,13 +751,12 @@ module Session = struct
          Deferred.Or_error.return session)
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         let%map () =
           Pgx_async.execute_unit
             connection
             ~params:
-              [ Value.of_string token_hash
-              ; Value.of_int user_id
+              [ Pgx_async.Value.of_string token_hash
+              ; Pgx_async.Value.of_int user_id
               ; Database_schema.value_of_time_ns expires_at
               ]
             [%string
@@ -918,20 +774,11 @@ module Session = struct
       List.find !sessions ~f:(fun session -> String.equal session.token_hash token_hash)
       |> Deferred.Or_error.return
     | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
-        let columns = String.concat ~sep:", " Database_schema.Session.columns in
-        let%map rows =
-          Pgx_async.execute
-            connection
-            ~params:[ Value.of_string token_hash ]
-            [%string
-              "SELECT %{columns} FROM %{Database_schema.Session.table} WHERE token_hash \
-               = $1"]
-        in
-        Utils.expect_at_most_one rows ~error_message:(fun _ ->
-          [%message "Expected at most one session for token hash"])
-        |> Option.map ~f:Database_schema.Session.of_row)
+      find_unique
+        (module Database_schema.Session)
+        connection
+        ~where:"token_hash = $1"
+        ~param:(Pgx_async.Value.of_string token_hash)
   ;;
 
   let delete t ~token_hash =
@@ -943,10 +790,9 @@ module Session = struct
       Deferred.Or_error.return ()
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
-        let module Value = Pgx_async.Value in
         Pgx_async.execute_unit
           connection
-          ~params:[ Value.of_string token_hash ]
+          ~params:[ Pgx_async.Value.of_string token_hash ]
           [%string "DELETE FROM %{Database_schema.Session.table} WHERE token_hash = $1"])
   ;;
 
