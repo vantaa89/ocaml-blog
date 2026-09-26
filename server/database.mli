@@ -22,20 +22,12 @@ module Post : sig
   val find_by_slug : t -> slug:string -> Database_schema.Post.t option Deferred.Or_error.t
   val find_by_id : t -> id:int -> Database_schema.Post.t option Deferred.Or_error.t
 
-  (** Returns list of posts. Special posts are excluded, and so are the hidden posts of
+  (** Returns list of posts, restricted to the posts carrying [tag] (regardless of case)
+      when it is given. Special posts are excluded, and so are the hidden posts of
       everyone but [viewer], the user reading them. *)
   val list
     :  t
-    -> viewer:int option
-    -> ?limit:int
-    -> ?offset:int (* default: [0] *)
-    -> unit
-    -> Database_schema.Post.t list Deferred.Or_error.t
-
-  (** Like [list], restricted to the posts carrying [tag], regardless of case. *)
-  val list_by_tag
-    :  t
-    -> tag:string
+    -> ?tag:string
     -> viewer:int option
     -> ?limit:int
     -> ?offset:int (* default: [0] *)

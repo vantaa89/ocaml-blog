@@ -41,7 +41,7 @@ let create_tables t =
         Pgx_async.execute_unit connection sql))
 ;;
 
-let insert
+let insert_exn
       (type row)
       (module Table : Database_schema.Table with type t = row)
       connection
@@ -132,15 +132,21 @@ module Post = struct
     (not post.hidden) || [%equal: int option] viewer (Some post.author_id)
   ;;
 
-  let visible_sql ~prefix ~param =
-    [%string "(NOT %{prefix}hidden OR %{prefix}author_id = $%{param#Int})"]
-  ;;
-
-  let list t ~viewer ?limit ?(offset = 0) () =
+  let list t ?tag ~viewer ?limit ?(offset = 0) () =
     match t with
-    | Mock { posts; _ } ->
+    | Mock { posts; tags; post_tags; _ } ->
+      let tagged_posts =
+        match tag with
+        | None -> !posts
+        | Some tag ->
+          List.filter !posts ~f:(fun post ->
+            List.exists !post_tags ~f:(fun post_tag ->
+              post_tag.post_id = post.id
+              && List.exists !tags ~f:(fun candidate ->
+                candidate.id = post_tag.tag_id && String.Caseless.equal candidate.name tag)))
+      in
       let posts =
-        List.filter !posts ~f:(fun post ->
+        List.filter tagged_posts ~f:(fun post ->
           (not post.special_post) && visible_to ~viewer post)
         |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
         |> Fn.flip List.drop offset
@@ -151,6 +157,15 @@ module Post = struct
          | Some limit -> List.take posts limit)
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
+        let tag_condition =
+          match tag with
+          | None -> ""
+          | Some _ ->
+            [%string
+              "AND id IN (SELECT pt.post_id FROM %{Database_schema.Post_tag.table} pt \
+               JOIN %{Database_schema.Tag.table} tag ON pt.tag_id = tag.id WHERE \
+               lower(tag.name) = lower($2))"]
+        in
         let limit_clause =
           match limit with
           | None -> ""
@@ -160,70 +175,13 @@ module Post = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Pgx_async.Value.opt Pgx_async.Value.of_int viewer ]
+            ~params:
+              (Pgx_async.Value.opt Pgx_async.Value.of_int viewer
+               :: Option.to_list (Option.map tag ~f:Pgx_async.Value.of_string))
             [%string
               "SELECT %{columns} FROM %{Database_schema.Post.table} WHERE NOT \
-               special_post AND %{visible_sql ~prefix:\"\" ~param:1} ORDER BY created_at \
-               DESC %{limit_clause} OFFSET %{offset#Int}"]
-        in
-        List.map rows ~f:Database_schema.Post.of_row)
-  ;;
-
-  let list_by_tag t ~tag ~viewer ?limit ?(offset = 0) () =
-    match t with
-    | Mock { posts; tags; post_tags; _ } ->
-      (match
-         List.find !tags ~f:(fun candidate -> String.Caseless.equal candidate.name tag)
-       with
-       | None -> Deferred.Or_error.return []
-       | Some { id = tag_id; _ } ->
-         let post_ids =
-           List.filter_map !post_tags ~f:(fun post_tag ->
-             match tag_id = post_tag.tag_id with
-             | true -> Some post_tag.post_id
-             | false -> None)
-           |> Int.Set.of_list
-         in
-         let posts =
-           List.filter !posts ~f:(fun post ->
-             Set.mem post_ids post.id
-             && (not post.special_post)
-             && visible_to ~viewer post)
-           |> List.sort ~compare:(fun a b -> Time_ns.compare b.created_at a.created_at)
-           |> Fn.flip List.drop offset
-         in
-         Deferred.Or_error.return
-           (match limit with
-            | None -> posts
-            | Some limit -> List.take posts limit))
-    | Real { connection } ->
-      Deferred.Or_error.try_with (fun () ->
-        let where =
-          [%string "AND NOT p.special_post AND %{visible_sql ~prefix:\"p.\" ~param:2}"]
-        in
-        let limit_clause =
-          match limit with
-          | None -> ""
-          | Some limit -> [%string "LIMIT %{limit#Int}"]
-        in
-        let columns =
-          Database_schema.Post.columns
-          |> List.map ~f:(fun column -> "p." ^ column)
-          |> String.concat ~sep:", "
-        in
-        let%map rows =
-          Pgx_async.execute
-            connection
-            ~params:
-              [ Pgx_async.Value.of_string tag
-              ; Pgx_async.Value.opt Pgx_async.Value.of_int viewer
-              ]
-            [%string
-              "SELECT %{columns} FROM %{Database_schema.Post.table} p JOIN \
-               %{Database_schema.Post_tag.table} pt ON p.id = pt.post_id JOIN \
-               %{Database_schema.Tag.table} tag ON pt.tag_id = tag.id WHERE \
-               lower(tag.name) = lower($1) %{where} ORDER BY p.created_at DESC \
-               %{limit_clause} OFFSET %{offset#Int}"]
+               special_post AND (NOT hidden OR author_id = $1) %{tag_condition} ORDER BY \
+               created_at DESC %{limit_clause} OFFSET %{offset#Int}"]
         in
         List.map rows ~f:Database_schema.Post.of_row)
   ;;
@@ -301,7 +259,7 @@ module Post = struct
          let post = row ~id:(next_id !posts ~id:(fun post -> post.id)) in
          posts := post :: !posts;
          Deferred.Or_error.return post)
-    | Real { connection } -> insert (module Database_schema.Post) connection ~row
+    | Real { connection } -> insert_exn (module Database_schema.Post) connection ~row
   ;;
 
   let update t ~id ~title ~slug ~content_en ~content_ko ~special_post =
@@ -367,7 +325,7 @@ module User = struct
          let user = row ~id:(next_id !users ~id:(fun user -> user.id)) in
          users := user :: !users;
          Deferred.Or_error.return user)
-    | Real { connection } -> insert (module Database_schema.User) connection ~row
+    | Real { connection } -> insert_exn (module Database_schema.User) connection ~row
   ;;
 
   let find_by_id t ~id =
@@ -477,7 +435,7 @@ module Image = struct
       let image = row ~id:(next_id !images ~id:(fun image -> image.id)) in
       images := image :: !images;
       Deferred.Or_error.return image
-    | Real { connection } -> insert (module Database_schema.Image) connection ~row
+    | Real { connection } -> insert_exn (module Database_schema.Image) connection ~row
   ;;
 
   let find_by_id t ~id =
@@ -652,7 +610,8 @@ module Publication = struct
       in
       publication := publication_row :: !publication;
       Deferred.Or_error.return publication_row
-    | Real { connection } -> insert (module Database_schema.Publication) connection ~row
+    | Real { connection } ->
+      insert_exn (module Database_schema.Publication) connection ~row
   ;;
 
   let list t ?(include_hidden = false) () =
@@ -690,7 +649,7 @@ module News = struct
       let news_row = row ~id:!last_news_id in
       news := news_row :: !news;
       Deferred.Or_error.return news_row
-    | Real { connection } -> insert (module Database_schema.News) connection ~row
+    | Real { connection } -> insert_exn (module Database_schema.News) connection ~row
   ;;
 
   let list t =

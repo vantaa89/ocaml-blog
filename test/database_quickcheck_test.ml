@@ -382,7 +382,7 @@ let run_op (side : Side.t) (op : Op.t) =
         (List.map counts ~f:(fun (tag, count) -> Side.tag_ref side tag, count))
     | List_posts_by_tag { name; as_author } ->
       let%map posts =
-        Database.Post.list_by_tag
+        Database.Post.list
           side.db
           ~tag:(Test_tag_name.to_string name)
           ~viewer:(Side.viewer side ~as_author)

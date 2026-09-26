@@ -133,11 +133,7 @@ let main_page db ~viewer =
 
 let post_list db ~query:({ tag; limit; offset } : Rpcs.Get_post_list.Query.t) ~viewer =
   let open Deferred.Or_error.Let_syntax in
-  let%bind posts =
-    match tag with
-    | None -> Database.Post.list db ~viewer ?limit ?offset ()
-    | Some tag -> Database.Post.list_by_tag db ~tag ~viewer ?limit ?offset ()
-  in
+  let%bind posts = Database.Post.list db ?tag ~viewer ?limit ?offset () in
   posts_to_summaries db posts
 ;;
 
