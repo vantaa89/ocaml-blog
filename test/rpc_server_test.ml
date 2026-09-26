@@ -434,3 +434,28 @@ let%expect_test "an uploaded image is named after its contents and served" =
     [%expect {| (OK (image/gif) true) |}];
     return ())
 ;;
+
+let%expect_test "a directory is not served as a file" =
+  let print_status server ~path =
+    let%map response, _body = Server_test_helpers.get server ~path in
+    print_s [%sexp (Cohttp.Response.status response : Cohttp.Code.status_code)]
+  in
+  with_seeded_server ~f:(fun server ->
+    let%bind _response, token =
+      Server_test_helpers.login ~username:author.username ~password server
+    in
+    let%bind () =
+      Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+        print_upload connection png)
+    in
+    [%expect {| (Uploaded (url /media/2026-08-01/a987c0d1fac0abc3.png)) |}];
+    let%bind () = print_status server ~path:"/static" in
+    [%expect {| Not_found |}];
+    let%bind () = print_status server ~path:"/static/" in
+    [%expect {| Not_found |}];
+    let%bind () = print_status server ~path:"/media" in
+    [%expect {| Not_found |}];
+    let%bind () = print_status server ~path:"/media/2026-08-01" in
+    [%expect {| Not_found |}];
+    return ())
+;;
