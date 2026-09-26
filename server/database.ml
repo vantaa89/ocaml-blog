@@ -12,7 +12,7 @@ type t =
       ; post_tags : Database_schema.Post_tag.t list ref
       ; publication : Database_schema.Publication.t list ref
       ; news : Database_schema.News.t list ref
-      ; last_news_id : int ref
+      ; last_id : int ref
       ; sessions : Database_schema.Session.t list ref
       }
 
@@ -20,8 +20,9 @@ let is_unique rows ~field ~value =
   not (List.exists rows ~f:(fun row -> String.equal (field row) value))
 ;;
 
-let next_id items ~id =
-  List.fold items ~init:0 ~f:(fun highest item -> Int.max highest (id item)) + 1
+let fresh_id last_id =
+  incr last_id;
+  !last_id
 ;;
 
 let with_connection ~f =
@@ -249,14 +250,14 @@ module Post = struct
       }
     in
     match t with
-    | Mock { posts; _ } ->
+    | Mock { posts; last_id; _ } ->
       (match is_unique !posts ~field:(fun post -> post.slug) ~value:slug with
        | false ->
          Deferred.return
            (Or_error.error_s
               [%message "duplicate key value violates unique constraint" (slug : string)])
        | true ->
-         let post = row ~id:(next_id !posts ~id:(fun post -> post.id)) in
+         let post = row ~id:(fresh_id last_id) in
          posts := post :: !posts;
          Deferred.Or_error.return post)
     | Real { connection } -> insert_exn (module Database_schema.Post) connection ~row
@@ -309,7 +310,7 @@ module User = struct
       { id; username; email; password_hash; date_joined; last_login = None }
     in
     match t with
-    | Mock { users; _ } ->
+    | Mock { users; last_id; _ } ->
       (match
          is_unique !users ~field:(fun user -> user.username) ~value:username
          && is_unique !users ~field:(fun user -> user.email) ~value:email
@@ -322,7 +323,7 @@ module User = struct
                   (username : string)
                   (email : string)])
        | true ->
-         let user = row ~id:(next_id !users ~id:(fun user -> user.id)) in
+         let user = row ~id:(fresh_id last_id) in
          users := user :: !users;
          Deferred.Or_error.return user)
     | Real { connection } -> insert_exn (module Database_schema.User) connection ~row
@@ -431,8 +432,8 @@ module Image = struct
   let create t ~filename ~date =
     let row ~id : Database_schema.Image.t = { id; filename; date } in
     match t with
-    | Mock { images; _ } ->
-      let image = row ~id:(next_id !images ~id:(fun image -> image.id)) in
+    | Mock { images; last_id; _ } ->
+      let image = row ~id:(fresh_id last_id) in
       images := image :: !images;
       Deferred.Or_error.return image
     | Real { connection } -> insert_exn (module Database_schema.Image) connection ~row
@@ -467,13 +468,11 @@ module Tag = struct
 
   let find_or_create t ~name =
     match t with
-    | Mock { tags; _ } ->
+    | Mock { tags; last_id; _ } ->
       (match List.find !tags ~f:(fun tag -> String.Caseless.equal tag.name name) with
        | Some tag -> Deferred.Or_error.return tag
        | None ->
-         let tag : Database_schema.Tag.t =
-           { id = next_id !tags ~id:(fun tag -> tag.id); name }
-         in
+         let tag : Database_schema.Tag.t = { id = fresh_id last_id; name } in
          tags := tag :: !tags;
          Deferred.Or_error.return tag)
     | Real { connection } ->
@@ -604,10 +603,8 @@ module Publication = struct
       { id; title; image_id; authors; journal; link; hidden = false }
     in
     match t with
-    | Mock { publication; _ } ->
-      let publication_row =
-        row ~id:(next_id !publication ~id:(fun publication -> publication.id))
-      in
+    | Mock { publication; last_id; _ } ->
+      let publication_row = row ~id:(fresh_id last_id) in
       publication := publication_row :: !publication;
       Deferred.Or_error.return publication_row
     | Real { connection } ->
@@ -644,9 +641,8 @@ module News = struct
   let create t ~content ~date =
     let row ~id : Database_schema.News.t = { id; content; date } in
     match t with
-    | Mock { news; last_news_id; _ } ->
-      incr last_news_id;
-      let news_row = row ~id:!last_news_id in
+    | Mock { news; last_id; _ } ->
+      let news_row = row ~id:(fresh_id last_id) in
       news := news_row :: !news;
       Deferred.Or_error.return news_row
     | Real { connection } -> insert_exn (module Database_schema.News) connection ~row
@@ -790,8 +786,17 @@ module For_testing = struct
       ; post_tags = ref post_tags
       ; publication = ref publication
       ; news = ref news
-      ; last_news_id =
-          ref (List.fold news ~init:0 ~f:(fun highest news -> Int.max highest news.id))
+      ; last_id =
+          List.concat
+            [ List.map posts ~f:(fun post -> post.id)
+            ; List.map users ~f:(fun user -> user.id)
+            ; List.map images ~f:(fun image -> image.id)
+            ; List.map tags ~f:(fun tag -> tag.id)
+            ; List.map publication ~f:(fun publication -> publication.id)
+            ; List.map news ~f:(fun news -> news.id)
+            ]
+          |> List.fold ~init:0 ~f:Int.max
+          |> ref
       ; sessions = ref sessions
       }
   ;;
