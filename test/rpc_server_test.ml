@@ -485,3 +485,25 @@ let%expect_test "a directory is not served as a file" =
     [%expect {| Not_found |}];
     return ())
 ;;
+
+let%expect_test "a request cannot reach outside the served directories" =
+  let print_status ~path =
+    with_seeded_server ~f:(fun server ->
+      let%map response, _body = Server_test_helpers.get server ~path in
+      print_s [%sexp (Cohttp.Response.status response : Cohttp.Code.status_code)])
+  in
+  let%bind () = print_status ~path:"/static/index.html" in
+  [%expect {| OK |}];
+  (* Tests run in [_build/default/test], next to this very file. *)
+  let%bind () = print_status ~path:"/static/..%2ftest%2frpc_server_test.ml" in
+  [%expect {| Not_found |}];
+  let%bind () = print_status ~path:"/static/..%2Ftest/rpc_server_test.ml" in
+  [%expect {| Not_found |}];
+  let%bind () = print_status ~path:"/static/%2e%2e/test/rpc_server_test.ml" in
+  [%expect {| Not_found |}];
+  let%bind () = print_status ~path:"/static/..%5ctest%5crpc_server_test.ml" in
+  [%expect {| Not_found |}];
+  let%bind () = print_status ~path:"/media/..%2f..%2fetc%2fpasswd" in
+  [%expect {| Not_found |}];
+  return ()
+;;

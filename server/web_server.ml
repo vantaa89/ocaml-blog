@@ -66,7 +66,8 @@ let with_same_origin_check request ~f =
 ;;
 
 let serve_file ~docroot ~path =
-  (* [resolve_local_file] strips [..] segments, so a request cannot escape [docroot]. *)
+  (* [resolve_local_file] strips [..] before decoding, so decode first for [..%2f]. *)
+  let path = Uri.pct_decode path in
   let file = Cohttp.Path.resolve_local_file ~docroot ~uri:(Uri.make ~path ()) in
   match%bind Sys.is_file file with
   | `Yes -> Server.respond_with_file file
