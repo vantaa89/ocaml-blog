@@ -1,5 +1,4 @@
 open! Core
-open! Import
 
 type t =
   | Home
@@ -16,6 +15,7 @@ type t =
       ; page : int
       }
   | Login
+  | Not_found of { path : string }
 [@@deriving sexp, equal]
 
 let page_of_query query =
@@ -30,21 +30,19 @@ let page_of_query query =
         | Some page -> Int.max 1 page))
 ;;
 
-let parse_exn (components : Bonsai_web_ui_url_var.Components.t) : t =
+let of_url ~path ~query : t =
   let segments =
-    String.split components.path ~on:'/'
+    String.split path ~on:'/'
     |> List.filter ~f:(Fn.non String.is_empty)
     |> List.map ~f:Uri.pct_decode
   in
-  let page = page_of_query components.query in
+  let page = page_of_query query in
   match segments with
   | [] -> Home
   | [ "about" ] -> About
   | [ "posts" ] ->
     let tag =
-      Map.find components.query "tag"
-      |> Option.bind ~f:List.hd
-      |> Option.map ~f:String.strip
+      Map.find query "tag" |> Option.bind ~f:List.hd |> Option.map ~f:String.strip
     in
     Posts { tag; page }
   | [ "post"; slug ] -> Post { slug }
@@ -52,7 +50,7 @@ let parse_exn (components : Bonsai_web_ui_url_var.Components.t) : t =
   | [ "new-post" ] -> New_post
   | [ "login" ] -> Login
   | [ "search"; query ] -> Search { query; page }
-  | _ -> Home
+  | _ -> Not_found { path }
 ;;
 
 let query_of_alist alist = String.Map.of_alist_exn (List.filter_opt alist)
@@ -63,40 +61,37 @@ let page_param page =
   | page -> Some ("page", [ Int.to_string page ])
 ;;
 
-let unparse (t : t) : Bonsai_web_ui_url_var.Components.t =
-  let create ?query path = Bonsai_web_ui_url_var.Components.create ~path ?query () in
+let to_url (t : t) =
   match t with
-  | Home -> create ""
-  | About -> create "about"
-  | Login -> create "login"
-  | Post { slug } -> create [%string "post/%{Uri.pct_encode slug}"]
-  | New_post -> create "new-post"
-  | Edit_post { slug } -> create [%string "post/%{Uri.pct_encode slug}/edit"]
+  | Home -> "", String.Map.empty
+  | About -> "about", String.Map.empty
+  | Login -> "login", String.Map.empty
+  | Not_found { path } -> path, String.Map.empty
+  | Post { slug } -> [%string "post/%{Uri.pct_encode slug}"], String.Map.empty
+  | New_post -> "new-post", String.Map.empty
+  | Edit_post { slug } -> [%string "post/%{Uri.pct_encode slug}/edit"], String.Map.empty
   | Posts { tag; page } ->
-    let query =
-      query_of_alist [ Option.map tag ~f:(fun tag -> "tag", [ tag ]); page_param page ]
-    in
-    create ~query "posts"
+    ( "posts"
+    , query_of_alist [ Option.map tag ~f:(fun tag -> "tag", [ tag ]); page_param page ] )
   | Search { query; page } ->
-    let query_params = query_of_alist [ page_param page ] in
-    create ~query:query_params [%string "search/%{Uri.pct_encode query}"]
+    [%string "search/%{Uri.pct_encode query}"], query_of_alist [ page_param page ]
 ;;
 
 let to_string t =
-  let (components : Bonsai_web_ui_url_var.Components.t) = unparse t in
+  let path, query = to_url t in
   let query =
-    match Map.is_empty components.query with
+    match Map.is_empty query with
     | true -> ""
-    | false -> "?" ^ Uri.encoded_of_query (Map.to_alist components.query)
+    | false -> "?" ^ Uri.encoded_of_query (Map.to_alist query)
   in
-  [%string "/%{components.path}%{query}"]
+  [%string "/%{path}%{query}"]
 ;;
 
 let with_page t page =
   match t with
   | Posts { tag; page = _ } -> Posts { tag; page }
   | Search { query; page = _ } -> Search { query; page }
-  | (Home | About | Post _ | New_post | Edit_post _ | Login) as t -> t
+  | (Home | About | Post _ | New_post | Edit_post _ | Login | Not_found _) as t -> t
 ;;
 
 let title = function
@@ -109,4 +104,5 @@ let title = function
   | About -> "about"
   | Search { query; _ } -> [%string "search: %{query}"]
   | Login -> "login"
+  | Not_found _ -> "not found"
 ;;

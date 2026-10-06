@@ -128,7 +128,6 @@ module Post = struct
         ~param:(Pgx_async.Value.of_int id)
   ;;
 
-  (* A hidden post belongs to its author alone. *)
   let visible_to ~viewer (post : Database_schema.Post.t) =
     (not post.hidden) || [%equal: int option] viewer (Some post.author_id)
   ;;

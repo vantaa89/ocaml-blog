@@ -130,6 +130,7 @@ let component =
     | Posts { tag; page } -> Pages.posts ~tag ~page
     | Search { query; page } -> Pages.search ~query ~page
     | Login -> Login_page.component
+    | Not_found _ -> Bonsai.const Client_utils.not_found_node
   in
   let%sub now = Bonsai.Clock.approx_now ~tick_every:(Time_ns.Span.of_hr 1.) in
   let%sub current_user = Session.current_user in

@@ -86,7 +86,7 @@ let find_post db ~slug ~viewer =
   match post with
   | None -> return None
   | Some post ->
-    (match (not post.hidden) || [%equal: int option] viewer (Some post.author_id) with
+    (match Database.Post.visible_to ~viewer post with
      | false -> return None
      | true ->
        let%map post = post_to_rpc db post in

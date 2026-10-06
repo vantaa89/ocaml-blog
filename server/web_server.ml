@@ -10,30 +10,48 @@ module Http_route = struct
   type t =
     | Media of { path : string }
     | Static of { path : string }
-    | Index
+    | Page
     | Login
     | Logout
     | Not_found
 
-  let of_request ~(meth : Cohttp.Code.meth) ~path : t =
+  let of_request ~db ~now request : t Deferred.t =
+    let path = Uri.path (Cohttp.Request.uri request) in
     let segments = String.split path ~on:'/' |> List.filter ~f:(Fn.non String.is_empty) in
-    match meth with
+    match Cohttp.Request.meth request with
     | `GET | `HEAD ->
       (match segments with
-       | [] -> Index
+       | [] -> return Page
        | prefix :: rest ->
-         let path = String.concat rest ~sep:"/" in
+         let file_path = String.concat rest ~sep:"/" in
          (match String.equal prefix media_url, String.equal prefix static_url with
-          | true, false -> Media { path }
-          | false, true -> Static { path }
-          | false, false -> Index
-          | true, true -> Not_found (* impossible *)))
+          | true, true -> return Not_found (* impossible *)
+          | true, false -> return (Media { path = file_path })
+          | false, true -> return (Static { path = file_path })
+          | false, false ->
+            (match Route.of_url ~path ~query:String.Map.empty with
+             | Not_found _ -> return Not_found
+             | Post { slug } | Edit_post { slug } ->
+               let%bind viewer =
+                 Authenticator.current_user_id
+                   ~db
+                   ~now
+                   ~session_token:(Authenticator.session_token request)
+                 >>| ok_exn
+               in
+               (match%map Database.Post.find_by_slug db ~slug >>| ok_exn with
+                | None -> Not_found
+                | Some post ->
+                  (match Database.Post.visible_to ~viewer post with
+                   | true -> Page
+                   | false -> Not_found))
+             | Home | Posts _ | New_post | About | Search _ | Login -> return Page)))
     | `POST ->
       (match segments with
-       | [ "login" ] -> Login
-       | [ "logout" ] -> Logout
-       | _ -> Not_found)
-    | _ -> Not_found
+       | [ "login" ] -> return Login
+       | [ "logout" ] -> return Logout
+       | _ -> return Not_found)
+    | _ -> return Not_found
   ;;
 end
 
@@ -55,7 +73,7 @@ let serve_file ~docroot ~path =
   | `No | `Unknown -> Server.respond_string ~status:`Not_found "File not found"
 ;;
 
-let serve_index ~static_dir =
+let serve_index ~static_dir ~status =
   let file = static_dir ^/ "index.html" in
   match%bind Sys.file_exists file with
   | `No | `Unknown -> Server.respond_string ~status:`Not_found "File not found"
@@ -74,6 +92,7 @@ let serve_index ~static_dir =
           String.substr_replace_all html ~pattern ~with_:(Buffer.contents escaped))
     in
     Server.respond_string
+      ~status
       ~headers:(Cohttp.Header.of_list [ "content-type", "text/html; charset=utf-8" ])
       html
 ;;
@@ -83,16 +102,14 @@ let serve ~time_source db (config : Config.t) =
   let http_handler (config : Config.t) () ~body _address request =
     let meth = Cohttp.Request.meth request in
     let dispatch () =
-      let uri = Cohttp.Request.uri request in
-      match Http_route.of_request ~meth ~path:(Uri.path uri) with
+      let now = Time_source.now time_source in
+      match%bind Http_route.of_request ~db ~now request with
       | Media { path } -> serve_file ~docroot:config.media_dir ~path
       | Static { path } -> serve_file ~docroot:config.static_dir ~path
-      | Index -> serve_index ~static_dir:config.static_dir
-      | Login ->
-        let now = Time_source.now time_source in
-        Authenticator.login authenticator ~db ~now ~body request
+      | Page -> serve_index ~static_dir:config.static_dir ~status:`OK
+      | Login -> Authenticator.login authenticator ~db ~now ~body request
       | Logout -> Authenticator.logout ~db request
-      | Not_found -> Server.respond_string ~status:`Not_found "Not found"
+      | Not_found -> serve_index ~static_dir:config.static_dir ~status:`Not_found
     in
     match meth with
     | `GET -> dispatch ()

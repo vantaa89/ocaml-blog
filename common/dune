@@ -1,6 +1,6 @@
 (library
  (name blog_common)
- (libraries core cmarkit re async_rpc_kernel)
+ (libraries core cmarkit re async_rpc_kernel uri)
  (preprocessor_deps ../owner_profile.sexp)
  (preprocess
   (pps ppx_jane ppx_blob)))

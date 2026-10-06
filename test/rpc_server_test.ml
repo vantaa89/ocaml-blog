@@ -124,6 +124,32 @@ let%expect_test "the page carries the site's name and description" =
   return ()
 ;;
 
+let%expect_test "a path that is no page, or names no post, is answered with status 404" =
+  let print_status server ~path =
+    let%map response, body = Server_test_helpers.get server ~path in
+    print_s
+      [%sexp
+        (Cohttp.Response.status response : Cohttp.Code.status_code)
+      , (String.is_substring body ~substring:"<title>" : bool)]
+  in
+  with_seeded_server ~f:(fun server ->
+    let%bind () = print_status server ~path:"/posts/" in
+    [%expect {| (OK true) |}];
+    let%bind () = print_status server ~path:"/post/hello-world" in
+    [%expect {| (OK true) |}];
+    let%bind () = print_status server ~path:"/post/hello-world/edit" in
+    [%expect {| (OK true) |}];
+    let%bind () = print_status server ~path:"/post/no-such-post" in
+    [%expect {| (Not_found true) |}];
+    let%bind () = print_status server ~path:"/post/no-such-post/edit" in
+    [%expect {| (Not_found true) |}];
+    let%bind () = print_status server ~path:"/no-such-page" in
+    [%expect {| (Not_found true) |}];
+    let%bind () = print_status server ~path:"/post/a/b" in
+    [%expect {| (Not_found true) |}];
+    return ())
+;;
+
 let%expect_test "the tag list reports how many posts carry each tag" =
   let%bind response =
     with_seeded_server ~f:(fun server ->

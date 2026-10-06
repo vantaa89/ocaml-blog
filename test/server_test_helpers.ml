@@ -79,9 +79,10 @@ let login ?origin ?username ?password t =
 
 let logout ?token t = post ?token t ~path:Urls.logout_path []
 
-let get t ~path =
+let get ?token t ~path =
   let%bind response, body =
     Cohttp_async.Client.get
+      ~headers:(cookie_header token |> Cohttp.Header.of_list)
       (Uri.of_string [%string "http://127.0.0.1:%{t.port#Int}%{path}"])
   in
   let%map body = Cohttp_async.Body.to_string body in

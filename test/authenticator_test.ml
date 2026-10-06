@@ -166,6 +166,22 @@ let%expect_test "a hidden post is visible only to its author" =
     return ())
 ;;
 
+let%expect_test "a hidden post's page is 404 to everyone but its author" =
+  with_seeded_server ~f:(fun server ->
+    let print_status ?token () =
+      let%map response, _body =
+        Server_test_helpers.get ?token server ~path:[%string "/post/%{hidden_post.slug}"]
+      in
+      print_s [%sexp (Cohttp.Response.status response : Cohttp.Code.status_code)]
+    in
+    let%bind () = print_status () in
+    [%expect {| Not_found |}];
+    let%bind _response, token = Server_test_helpers.login ~username ~password server in
+    let%bind () = print_status ?token () in
+    [%expect {| OK |}];
+    return ())
+;;
+
 let%expect_test "repeated failures lock a username out" =
   with_seeded_server ~f:(fun server ->
     let wrong_password () =

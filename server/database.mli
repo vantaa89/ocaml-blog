@@ -22,6 +22,9 @@ module Post : sig
   val find_by_slug : t -> slug:string -> Database_schema.Post.t option Deferred.Or_error.t
   val find_by_id : t -> id:int -> Database_schema.Post.t option Deferred.Or_error.t
 
+  (** A hidden post is visible to its author alone. *)
+  val visible_to : viewer:int option -> Database_schema.Post.t -> bool
+
   (** Returns list of posts, restricted to the posts carrying [tag] (regardless of case)
       when it is given. Special posts are excluded, and so are the hidden posts of
       everyone but [viewer], the user reading them. *)

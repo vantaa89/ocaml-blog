@@ -14,12 +14,12 @@ module Http_route : sig
   type t =
     | Media of { path : string }
     | Static of { path : string }
-    | Index (* Single-page application *)
+    | Page (* Single-page application at [index.html] *)
     | Login
     | Logout
-    | Not_found
+    | Not_found (* [index.html] with status 404 *)
 
-  val of_request : meth:Cohttp.Code.meth -> path:string -> t
+  val of_request : db:Database.t -> now:Time_ns.t -> Cohttp.Request.t -> t Deferred.t
 end
 
 (** Starts listening. Pass a port of 0 to bind an arbitrary free port, which
