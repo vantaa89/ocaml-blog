@@ -3,6 +3,9 @@ open! Async
 open! Import
 
 let cookie_name = "sessionid"
+let session_span = Time_ns.Span.of_day 14.
+let token_length = 32
+let max_form_length = 4096
 
 type t = { login_attempts : Rate_limiter.t }
 
@@ -17,9 +20,6 @@ let create
         ~time_source
   }
 ;;
-
-let session_span = Time_ns.Span.of_day 14.
-let token_length = 32
 
 (* The cookie carries the token itself and the database keeps only its digest, so a leaked
    [session] table does not hand out usable sessions. *)
@@ -51,84 +51,97 @@ let login t ~db ~now ~body request =
   let forwarded_for =
     Cohttp.Header.get (Cohttp.Request.headers request) "x-forwarded-for"
   in
-  let%bind body = Cohttp_async.Body.to_string body in
-  let field name =
-    let form = Uri.query_of_encoded body in
-    (* [Uri.query_of_encoded] splits each value on [,], so we concatenate using comma *)
-    List.Assoc.find form name ~equal:String.equal
-    |> Option.map ~f:(String.concat ~sep:",")
+  (* A body of known length is read no further than that length, unlike a chunked one. *)
+  let short_enough =
+    match Cohttp.Request.encoding request with
+    | Fixed length -> Int64.(length <= of_int max_form_length)
+    | Chunked | Unknown -> false
   in
-  match Option.both (field "username") (field "password") with
-  | None ->
+  match short_enough with
+  | false ->
     Cohttp_async.Server.respond_string
       ~status:`Bad_request
-      "Expected a username and a password"
-  | Some (username, password) ->
-    (match Rate_limiter.record_attempt t.login_attempts ~key:username with
-     | `Too_many ->
-       Log.Global.info_s
-         [%message
-           "Login refused after too many attempts"
-             (username : string)
-             (forwarded_for : string option)];
+      "Expected a short form of known length"
+  | true ->
+    let%bind body = Cohttp_async.Body.to_string body in
+    let field name =
+      let form = Uri.query_of_encoded body in
+      (* [Uri.query_of_encoded] splits each value on [,], so we concatenate using comma *)
+      List.Assoc.find form name ~equal:String.equal
+      |> Option.map ~f:(String.concat ~sep:",")
+    in
+    (match Option.both (field "username") (field "password") with
+     | None ->
        Cohttp_async.Server.respond_string
-         ~status:`Too_many_requests
-         "Too many login attempts; try again later"
-     | `Allowed ->
-       let logged_in =
-         let open Deferred.Or_error.Let_syntax in
-         match%bind
-           Database.User.find_by_username db ~username
-           |> Deferred.Or_error.tag ~tag:"looking up the user"
-         with
-         | None -> return `Denied
-         | Some user ->
-           (match%bind
-              Password.verify ~password_hash:user.password_hash ~password
-              |> Deferred.return
-            with
-            | false -> return `Denied
-            | true ->
-              (* Logins are the only location where the [session] table grows, so we sweep
-                 the table here to remove stale entries. *)
-              don't_wait_for
-                (let%map.Deferred swept = Database.Session.delete_expired db ~now in
-                 Or_error.iter_error swept ~f:(fun error ->
-                   Log.Global.error_s
-                     [%message "Failed to delete expired sessions" (error : Error.t)]));
-              let token =
-                Mirage_crypto_rng_unix.getrandom token_length
-                |> Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet
-              in
-              let%bind () =
-                Database.User.set_last_login db ~username ~last_login:now
-                |> Deferred.Or_error.tag ~tag:"recording the login"
-              in
-              let%map (_ : Database_schema.Session.t) =
-                Database.Session.create
-                  db
-                  ~token_hash:(hash_token token)
-                  ~user_id:user.id
-                  ~expires_at:(Time_ns.add now session_span)
-                |> Deferred.Or_error.tag ~tag:"creating the session"
-              in
-              `Logged_in token)
-       in
-       (match%bind logged_in with
-        | Error error -> respond_internal_error error
-        | Ok `Denied ->
+         ~status:`Bad_request
+         "Expected a username and a password"
+     | Some (username, password) ->
+       (match Rate_limiter.record_attempt t.login_attempts ~key:username with
+        | `Too_many ->
           Log.Global.info_s
-            [%message "Login failed" (username : string) (forwarded_for : string option)];
+            [%message
+              "Login refused after too many attempts"
+                (username : string)
+                (forwarded_for : string option)];
           Cohttp_async.Server.respond_string
-            ~status:`Unauthorized
-            "Invalid username or password"
-        | Ok (`Logged_in token) ->
-          Log.Global.info_s
-            [%message "Logged in" (username : string) (forwarded_for : string option)];
-          Rate_limiter.clear t.login_attempts ~key:username;
-          Cohttp_async.Server.respond
-            ~headers:(session_cookie ~value:token ~max_age:session_span)
-            `No_content))
+            ~status:`Too_many_requests
+            "Too many login attempts; try again later"
+        | `Allowed ->
+          let logged_in =
+            let open Deferred.Or_error.Let_syntax in
+            match%bind
+              Database.User.find_by_username db ~username
+              |> Deferred.Or_error.tag ~tag:"looking up the user"
+            with
+            | None -> return `Denied
+            | Some user ->
+              (match%bind
+                 Password.verify ~password_hash:user.password_hash ~password
+                 |> Deferred.return
+               with
+               | false -> return `Denied
+               | true ->
+                 (* Logins are the only location where the [session] table grows, so we
+                    sweep the table here to remove stale entries. *)
+                 don't_wait_for
+                   (let%map.Deferred swept = Database.Session.delete_expired db ~now in
+                    Or_error.iter_error swept ~f:(fun error ->
+                      Log.Global.error_s
+                        [%message "Failed to delete expired sessions" (error : Error.t)]));
+                 let token =
+                   Mirage_crypto_rng_unix.getrandom token_length
+                   |> Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet
+                 in
+                 let%bind () =
+                   Database.User.set_last_login db ~username ~last_login:now
+                   |> Deferred.Or_error.tag ~tag:"recording the login"
+                 in
+                 let%map (_ : Database_schema.Session.t) =
+                   Database.Session.create
+                     db
+                     ~token_hash:(hash_token token)
+                     ~user_id:user.id
+                     ~expires_at:(Time_ns.add now session_span)
+                   |> Deferred.Or_error.tag ~tag:"creating the session"
+                 in
+                 `Logged_in token)
+          in
+          (match%bind logged_in with
+           | Error error -> respond_internal_error error
+           | Ok `Denied ->
+             Log.Global.info_s
+               [%message
+                 "Login failed" (username : string) (forwarded_for : string option)];
+             Cohttp_async.Server.respond_string
+               ~status:`Unauthorized
+               "Invalid username or password"
+           | Ok (`Logged_in token) ->
+             Log.Global.info_s
+               [%message "Logged in" (username : string) (forwarded_for : string option)];
+             Rate_limiter.clear t.login_attempts ~key:username;
+             Cohttp_async.Server.respond
+               ~headers:(session_cookie ~value:token ~max_age:session_span)
+               `No_content)))
 ;;
 
 let session_token request =

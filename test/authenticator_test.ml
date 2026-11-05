@@ -97,6 +97,16 @@ let%expect_test "a form without both fields is a bad request" =
     return ())
 ;;
 
+let%expect_test "an overlong form is a bad request" =
+  with_seeded_server ~f:(fun server ->
+    let%bind response, _token =
+      Server_test_helpers.login ~username ~password:(String.make 5000 'a') server
+    in
+    print_response response;
+    [%expect {| ((status 400) (set_cookie ())) |}];
+    return ())
+;;
+
 let%expect_test "a login from another origin is refused" =
   let%bind () =
     with_seeded_server ~f:(fun server ->
