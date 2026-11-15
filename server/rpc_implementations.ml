@@ -248,7 +248,7 @@ let upload_image db ~media_dir ~date ~contents ~user_id =
 
 let current_user db ~now ~session_token =
   let open Deferred.Or_error.Let_syntax in
-  let%bind user_id = Authenticator.current_user_id ~db ~now ~session_token in
+  let%bind user_id = Session_authenticator.current_user_id ~db ~now ~session_token in
   let%map user =
     match user_id with
     | None -> return None
@@ -261,7 +261,7 @@ let current_user db ~now ~session_token =
 ;;
 
 module Connection_state = struct
-  type t = { session_token : string option }
+  type t = { session_token : Token.t option }
 end
 
 let implement rpc f =
@@ -272,7 +272,10 @@ let implement rpc f =
 let implementations ~db ~time_source (config : Config.t) =
   let open Deferred.Or_error.Let_syntax in
   let current_user_id ~session_token =
-    Authenticator.current_user_id ~db ~now:(Time_source.now time_source) ~session_token
+    Session_authenticator.current_user_id
+      ~db
+      ~now:(Time_source.now time_source)
+      ~session_token
   in
   Rpc.Implementations.create_exn
     ~on_unknown_rpc:`Close_connection
@@ -298,7 +301,9 @@ let implementations ~db ~time_source (config : Config.t) =
           set_post_hidden db ~query ~user_id)
       ; implement Rpcs.Create_post.rpc (fun { session_token } form ->
           let now = Time_source.now time_source in
-          let%bind user_id = Authenticator.current_user_id ~db ~now ~session_token in
+          let%bind user_id =
+            Session_authenticator.current_user_id ~db ~now ~session_token
+          in
           create_post db ~form ~user_id ~now)
       ; implement Rpcs.Update_post.rpc (fun { session_token } query ->
           let%bind user_id = current_user_id ~session_token in
@@ -306,7 +311,9 @@ let implementations ~db ~time_source (config : Config.t) =
       ; implement Rpcs.Upload_image.rpc (fun { session_token } { contents } ->
           let now = Time_source.now time_source in
           let date = Time_ns.to_date now ~zone:config.zone in
-          let%bind user_id = Authenticator.current_user_id ~db ~now ~session_token in
+          let%bind user_id =
+            Session_authenticator.current_user_id ~db ~now ~session_token
+          in
           upload_image db ~media_dir:config.media_dir ~date ~contents ~user_id)
       ; implement Rpcs.Get_current_user.rpc (fun { session_token } () ->
           current_user db ~now:(Time_source.now time_source) ~session_token)

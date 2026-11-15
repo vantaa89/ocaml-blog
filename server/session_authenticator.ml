@@ -4,7 +4,6 @@ open! Import
 
 let cookie_name = "sessionid"
 let session_span = Time_ns.Span.of_day 14.
-let token_length = 32
 let max_form_length = 4096
 
 type t = { login_attempts : Rate_limiter.t }
@@ -20,10 +19,6 @@ let create
         ~time_source
   }
 ;;
-
-(* The cookie carries the token itself and the database keeps only its digest, so a leaked
-   [session] table does not hand out usable sessions. *)
-let hash_token token = Digestif.SHA256.digest_string token |> Digestif.SHA256.to_hex
 
 let session_cookie ~value ~max_age =
   let header =
@@ -51,7 +46,7 @@ let login t ~db ~now ~body request =
   let forwarded_for =
     Cohttp.Header.get (Cohttp.Request.headers request) "x-forwarded-for"
   in
-  (* A body of known length is read no further than that length, unlike a chunked one. *)
+  (* A body with an unknown length is rejected to avoid OOM *)
   let short_enough =
     match Cohttp.Request.encoding request with
     | Fixed length -> Int64.(length <= of_int max_form_length)
@@ -108,10 +103,7 @@ let login t ~db ~now ~body request =
                     Or_error.iter_error swept ~f:(fun error ->
                       Log.Global.error_s
                         [%message "Failed to delete expired sessions" (error : Error.t)]));
-                 let token =
-                   Mirage_crypto_rng_unix.getrandom token_length
-                   |> Base64.encode_string ~pad:false ~alphabet:Base64.uri_safe_alphabet
-                 in
+                 let token = Token.generate () in
                  let%bind () =
                    Database.User.set_last_login db ~username ~last_login:now
                    |> Deferred.Or_error.tag ~tag:"recording the login"
@@ -119,7 +111,7 @@ let login t ~db ~now ~body request =
                  let%map (_ : Database_schema.Session.t) =
                    Database.Session.create
                      db
-                     ~token_hash:(hash_token token)
+                     ~token_hash:(Token.hash token)
                      ~user_id:user.id
                      ~expires_at:(Time_ns.add now session_span)
                    |> Deferred.Or_error.tag ~tag:"creating the session"
@@ -140,13 +132,14 @@ let login t ~db ~now ~body request =
                [%message "Logged in" (username : string) (forwarded_for : string option)];
              Rate_limiter.clear t.login_attempts ~key:username;
              Cohttp_async.Server.respond
-               ~headers:(session_cookie ~value:token ~max_age:session_span)
+               ~headers:
+                 (session_cookie ~value:(Token.to_string token) ~max_age:session_span)
                `No_content)))
 ;;
 
-let session_token request =
+let token request =
   let cookies = Cohttp.Cookie.Cookie_hdr.extract (Cohttp.Request.headers request) in
-  List.Assoc.find cookies cookie_name ~equal:String.equal
+  List.Assoc.find cookies cookie_name ~equal:String.equal |> Option.map ~f:Token.of_string
 ;;
 
 let current_user_id ~db ~now ~session_token =
@@ -155,7 +148,7 @@ let current_user_id ~db ~now ~session_token =
   | None -> return None
   | Some token ->
     let%map session =
-      Database.Session.find_by_token_hash db ~token_hash:(hash_token token)
+      Database.Session.find_by_token_hash db ~token_hash:(Token.hash token)
     in
     Option.bind session ~f:(fun (session : Database_schema.Session.t) ->
       match Time_ns.( > ) session.expires_at now with
@@ -174,10 +167,10 @@ let logout ~db request =
     in
     Cohttp_async.Server.respond ~headers `No_content
   in
-  match session_token request with
+  match token request with
   | None -> respond_logged_out ()
   | Some token ->
-    (match%bind Database.Session.delete db ~token_hash:(hash_token token) with
+    (match%bind Database.Session.delete db ~token_hash:(Token.hash token) with
      | Error error -> respond_internal_error error
      | Ok () -> respond_logged_out ())
 ;;

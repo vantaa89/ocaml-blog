@@ -48,10 +48,14 @@ module Test_token = struct
     | C
   [@@deriving equal, sexp_of, quickcheck]
 
-  let to_string : t -> string = function
-    | A -> "token-a"
-    | B -> "token-b"
-    | C -> "token-c"
+  let to_hash t =
+    let token =
+      match t with
+      | A -> "token-a"
+      | B -> "token-b"
+      | C -> "token-c"
+    in
+    Token.hash (Token.of_string token)
   ;;
 end
 
@@ -131,6 +135,13 @@ module Op = struct
     | Find_session of Test_token.t
     | Delete_session of Test_token.t
     | Delete_expired_sessions
+    | Create_api_token of
+        { label : Test_slug.t
+        ; token : Test_token.t
+        }
+    | Find_api_token of Test_token.t
+    | List_api_tokens
+    | Delete_api_token of Test_slug.t
   [@@deriving sexp_of, quickcheck]
 end
 
@@ -178,9 +189,19 @@ module Observed = struct
 
   module Session = struct
     type t =
-      { token_hash : string
+      { token_hash : Token.Hash.t
       ; user : Ref.t
       ; expires_at : Time_ns.Alternate_sexp.t
+      }
+    [@@deriving equal, sexp_of]
+  end
+
+  module Api_token = struct
+    type t =
+      { label : string
+      ; token_hash : Token.Hash.t
+      ; user : Ref.t
+      ; created_at : Time_ns.Alternate_sexp.t
       }
     [@@deriving equal, sexp_of]
   end
@@ -197,6 +218,8 @@ module Response = struct
     | News of Observed.News.t list
     | Publications of Observed.Publication.t list
     | Session of Observed.Session.t option
+    | Api_token of Observed.Api_token.t option
+    | Api_tokens of Observed.Api_token.t list
     (* The op referred to an object that does not exist. *)
     | Skipped
     (* Error messages differ between a Postgres error and a [Mock] one, so we only compare
@@ -264,13 +287,20 @@ module Side = struct
     }
   ;;
 
+  let api_token_ref t (api_token : Database_schema.Api_token.t) : Observed.Api_token.t =
+    { label = api_token.label
+    ; token_hash = api_token.token_hash
+    ; user = ref_of_id t.users api_token.user_id
+    ; created_at = api_token.created_at
+    }
+  ;;
+
   let create db ~now =
-    let username = "author" in
     let%bind author =
       Database.User.create
         db
-        ~username
-        ~email:[%string "%{username}@example.com"]
+        ~username:"author"
+        ~email:"user@example.com"
         ~password_hash:"hash"
         ~date_joined:(Date.of_string "2024-01-01")
       |> Deferred.Or_error.ok_exn
@@ -434,25 +464,46 @@ let run_op (side : Side.t) (op : Op.t) =
       let%map session =
         Database.Session.create
           side.db
-          ~token_hash:(Test_token.to_string token)
+          ~token_hash:(Test_token.to_hash token)
           ~user_id:side.author_id
           ~expires_at:(Test_expiry.to_time_ns expiry ~now:side.now)
       in
       Response.Session (Some (Side.session_ref side session))
     | Find_session token ->
       let%map session =
-        Database.Session.find_by_token_hash
-          side.db
-          ~token_hash:(Test_token.to_string token)
+        Database.Session.find_by_token_hash side.db ~token_hash:(Test_token.to_hash token)
       in
       Response.Session (Option.map session ~f:(Side.session_ref side))
     | Delete_session token ->
       let%map () =
-        Database.Session.delete side.db ~token_hash:(Test_token.to_string token)
+        Database.Session.delete side.db ~token_hash:(Test_token.to_hash token)
       in
       Response.Unit
     | Delete_expired_sessions ->
       let%map () = Database.Session.delete_expired side.db ~now:side.now in
+      Response.Unit
+    | Create_api_token { label; token } ->
+      let%map api_token =
+        Database.Api_token.create
+          side.db
+          ~label:(Test_slug.to_string label)
+          ~token_hash:(Test_token.to_hash token)
+          ~user_id:side.author_id
+          ~created_at:side.now
+      in
+      Response.Api_token (Some (Side.api_token_ref side api_token))
+    | Find_api_token token ->
+      let%map api_token =
+        Database.Api_token.find_by_token_hash
+          side.db
+          ~token_hash:(Test_token.to_hash token)
+      in
+      Response.Api_token (Option.map api_token ~f:(Side.api_token_ref side))
+    | List_api_tokens ->
+      let%map api_tokens = Database.Api_token.list side.db in
+      Response.Api_tokens (List.map (Map.data api_tokens) ~f:(Side.api_token_ref side))
+    | Delete_api_token label ->
+      let%map () = Database.Api_token.delete side.db ~label:(Test_slug.to_string label) in
       Response.Unit
   in
   match result with

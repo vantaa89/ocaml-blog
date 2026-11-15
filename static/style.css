@@ -44,7 +44,7 @@
     padding-right: 12px;
 } */
 
-.custom-container{  
+.custom-container{
     /*
     화면 너비가 880px(--content-width)가 될 때까지는 100%, 이후는 880px로 고정
     */
@@ -64,8 +64,8 @@
 }
 
 
-@media(min-width: 1080px){ 
-    /* 
+@media(min-width: 1080px){
+    /*
      min-width: var(--content-width) + 200px로 설정 (sidebar의 최소 너비가 100px)
     */
     .sidebar{
@@ -111,7 +111,7 @@ h1#title {
 
 .post-detail-content .toc{
     border-left: 2px solid gray;
-    
+
 }
 
 .post-detail-content .toc li{
@@ -383,8 +383,18 @@ h1#title {
     color: rgb(24 24 27);
 }
 
-.about-content hr{
-    margin: 20px 0;
+.about-content h2 ~ h2{
+    margin-top: 20px;
+    padding-top: 30px;
+    border-top: 1px dashed gray;
+}
+
+.about-content h2 em{  /* section note */
+    display: block;
+    margin-top: 8px;
+    font-size: small;
+    font-weight: normal;
+    color: #555;
 }
 
 .about-content h3{
@@ -413,7 +423,7 @@ h1#title {
     color: #555;
 }
 
-.about-content ul.item-list{
+.about-content h4 + ul{  /* skills, as chips */
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
@@ -421,7 +431,7 @@ h1#title {
     gap: 8px 4px;
 }
 
-.about-content ul.item-list li{
+.about-content h4 + ul li{
     padding: 0px 12px;
     height: 28px;
     line-height: 28px;
@@ -450,8 +460,18 @@ h1#title {
     /*color: #AAA;*/
 }
 
-.about-content hr{
-    border: 1px dashed gray;
+.about-content p.role{
+    margin: 0;
+    font-style: italic;
+    color: #555;
+}
+
+.about-content section[role="doc-bibliography"] li{
+    margin-bottom: 8px;
+}
+
+.about-content section[role="doc-bibliography"] .prefix{
+    margin-right: 6px;
 }
 
 /* posts 페이지 */
@@ -553,7 +573,7 @@ h1#title {
 .sidebar #search-form button{
    padding: 0;
    color: white;
-   background-color: var(--main-theme-color); 
+   background-color: var(--main-theme-color);
    border: none;
    border-radius: 0;
 }
@@ -849,35 +869,35 @@ mark {
     .search-modal {
         padding-top: 5vh;
     }
-    
+
     .search-modal-content {
         width: 95%;
         max-height: 80vh;
     }
-    
+
     .search-input-container {
         padding: 16px;
     }
-    
+
     .search-input-container input {
         font-size: 16px; /* Prevent zoom on iOS */
     }
-    
+
     .search-result-item {
         padding: 12px 16px;
     }
-    
+
     /* Hide Ctrl+K text and desktop text on mobile to save space */
     .search-shortcut-nav,
     .search-text-desktop {
         display: none;
     }
-    
+
     /* Show mobile search text */
     .search-text-mobile {
         display: inline;
     }
-    
+
     /* Make search bar span full width on mobile */
     .search-trigger {
         width: 100%;

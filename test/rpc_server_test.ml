@@ -5,17 +5,8 @@ open! Import
 let () = Log.Global.set_output []
 let zone = Timezone.find_exn "Asia/Seoul"
 let start_date = Date.of_string "2026-08-01"
-let password = "password"
-
-let author : Database_schema.User.t =
-  { id = 1
-  ; username = "author"
-  ; email = "author@example.com"
-  ; password_hash = Password.hash_exn password
-  ; date_joined = start_date
-  ; last_login = None
-  }
-;;
+let author = Server_test_helpers.user ~id:1 ~username:"author"
+let password = Server_test_helpers.password
 
 (* Posts are ordered by [created_at], so each one gets a distinct day. *)
 let post ~id ~slug ~title ~special_post : Database_schema.Post.t =
@@ -311,10 +302,10 @@ let form : Rpcs.Post_form.t =
 
 let%expect_test "the author creates a post and edits it" =
   with_seeded_server ~f:(fun server ->
-    let%bind _response, token =
+    let%bind _response, credential =
       Server_test_helpers.login ~username:author.username ~password server
     in
-    Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+    Server_test_helpers.with_rpc_connection ?credential server ~f:(fun connection ->
       let%bind created = Rpc.Rpc.dispatch_exn Rpcs.Create_post.rpc connection form in
       print_s [%sexp (created : Rpcs.Create_post.Response.t)];
       [%expect {| Saved |}];
@@ -348,10 +339,10 @@ let%expect_test "the author creates a post and edits it" =
 
 let%expect_test "saving a post sets its tags, reusing existing ones regardless of case" =
   with_seeded_server ~f:(fun server ->
-    let%bind _response, token =
+    let%bind _response, credential =
       Server_test_helpers.login ~username:author.username ~password server
     in
-    Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+    Server_test_helpers.with_rpc_connection ?credential server ~f:(fun connection ->
       let print_tags () =
         let%map post =
           Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug = "first" }
@@ -381,10 +372,10 @@ let%expect_test "saving a post sets its tags, reusing existing ones regardless o
 
 let%expect_test "a slug belongs to one post" =
   with_seeded_server ~f:(fun server ->
-    let%bind _response, token =
+    let%bind _response, credential =
       Server_test_helpers.login ~username:author.username ~password server
     in
-    Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+    Server_test_helpers.with_rpc_connection ?credential server ~f:(fun connection ->
       let taken = { form with slug = "hello-world" } in
       let%bind created = Rpc.Rpc.dispatch_exn Rpcs.Create_post.rpc connection taken in
       print_s [%sexp (created : Rpcs.Create_post.Response.t)];
@@ -430,11 +421,11 @@ let%expect_test "an anonymous connection cannot upload images" =
 
 let%expect_test "an uploaded image is named after its contents and served" =
   with_seeded_server ~f:(fun server ->
-    let%bind _response, token =
+    let%bind _response, credential =
       Server_test_helpers.login ~username:author.username ~password server
     in
     let%bind () =
-      Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+      Server_test_helpers.with_rpc_connection ?credential server ~f:(fun connection ->
         let%bind () = print_upload connection png in
         [%expect {| (Uploaded (url /media/2026-08-01/a987c0d1fac0abc3.png)) |}];
         (* The same image again on the same day overwrites the same file. *)
@@ -467,11 +458,11 @@ let%expect_test "a directory is not served as a file" =
     print_s [%sexp (Cohttp.Response.status response : Cohttp.Code.status_code)]
   in
   with_seeded_server ~f:(fun server ->
-    let%bind _response, token =
+    let%bind _response, credential =
       Server_test_helpers.login ~username:author.username ~password server
     in
     let%bind () =
-      Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+      Server_test_helpers.with_rpc_connection ?credential server ~f:(fun connection ->
         print_upload connection png)
     in
     [%expect {| (Uploaded (url /media/2026-08-01/a987c0d1fac0abc3.png)) |}];

@@ -28,6 +28,7 @@
   cmarkit
   cohttp-async
   digestif
+  lambdasoup
   mirage-crypto-rng
   pgx_async
   ptime

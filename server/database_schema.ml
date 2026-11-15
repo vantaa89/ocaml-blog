@@ -11,8 +11,14 @@ let time_ns_of_value_exn value =
 
 let value_of_time_ns time = Time_ns.to_string_utc time |> Pgx_async.Value.of_string
 
+let token_hash_of_value_exn value =
+  Pgx_async.Value.to_string_exn value |> Token.Hash.of_string
+;;
+
+let value_of_token_hash hash = Token.Hash.to_string hash |> Pgx_async.Value.of_string
+
 module type Table = sig
-  type t [@@deriving compare]
+  type t
 
   val table : string
   val columns : string list
@@ -30,7 +36,7 @@ module User = struct
     ; date_joined : Date.t
     ; last_login : Time_ns.t option
     }
-  [@@deriving fields, compare]
+  [@@deriving fields]
 
   let table = "users"
   let columns = Fields.names
@@ -86,7 +92,7 @@ module Image = struct
     ; filename : string
     ; date : Date.t
     }
-  [@@deriving fields, compare]
+  [@@deriving fields]
 
   let url t = Urls.media_path ^/ Date.to_string t.date ^/ t.filename
   let table = "image"
@@ -130,7 +136,7 @@ module Tag = struct
     { id : int
     ; name : string
     }
-  [@@deriving fields, compare]
+  [@@deriving fields]
 
   let table = "tag"
   let columns = Fields.names
@@ -175,7 +181,7 @@ module Post = struct
     ; special_post : bool (* pinned to the about/main pages *)
     ; hidden : bool (* soft delete *)
     }
-  [@@deriving fields, compare]
+  [@@deriving fields]
 
   let table = "post"
 
@@ -258,7 +264,7 @@ module Publication = struct
     ; link : string option
     ; hidden : bool
     }
-  [@@deriving fields, compare]
+  [@@deriving fields]
 
   let table = "publication"
   let columns = Fields.names
@@ -314,7 +320,7 @@ module News = struct
     ; content : string
     ; date : Date.t
     }
-  [@@deriving fields, compare]
+  [@@deriving fields]
 
   let table = "news"
   let columns = Fields.names
@@ -354,11 +360,11 @@ end
 
 module Session = struct
   type t =
-    { token_hash : string (* SHA-256 of the token in the session cookie *)
+    { token_hash : Token.Hash.t (* of the token in the session cookie *)
     ; user_id : int
     ; expires_at : Time_ns.t
     }
-  [@@deriving fields, compare]
+  [@@deriving fields]
 
   let table = "session"
   let columns = Fields.names
@@ -367,7 +373,7 @@ module Session = struct
     let module Value = Pgx_async.Value in
     match row with
     | [ token_hash; user_id; expires_at ] ->
-      { token_hash = Value.to_string_exn token_hash
+      { token_hash = token_hash_of_value_exn token_hash
       ; user_id = Value.to_int_exn user_id
       ; expires_at = time_ns_of_value_exn expires_at
       }
@@ -378,7 +384,7 @@ module Session = struct
     let module Value = Pgx_async.Value in
     let value to_value field = to_value (Field.get field t) in
     Fields.to_list
-      ~token_hash:(value Value.of_string)
+      ~token_hash:(value value_of_token_hash)
       ~user_id:(value Value.of_int)
       ~expires_at:(value value_of_time_ns)
   ;;
@@ -399,12 +405,60 @@ module Session = struct
   ;;
 end
 
+module Api_token = struct
+  type t =
+    { label : string
+    ; token_hash : Token.Hash.t (* of the token in the [Authorization] header *)
+    ; user_id : int
+    ; created_at : Time_ns.t
+    }
+  [@@deriving fields]
+
+  let table = "api_token"
+  let columns = Fields.names
+
+  let of_row row : t =
+    let module Value = Pgx_async.Value in
+    match row with
+    | [ label; token_hash; user_id; created_at ] ->
+      { label = Value.to_string_exn label
+      ; token_hash = token_hash_of_value_exn token_hash
+      ; user_id = Value.to_int_exn user_id
+      ; created_at = time_ns_of_value_exn created_at
+      }
+    | _ -> raise_s [%message "Unexpected row shape for Api_token" (row : Value.t list)]
+  ;;
+
+  let to_row t =
+    let module Value = Pgx_async.Value in
+    let value to_value field = to_value (Field.get field t) in
+    Fields.to_list
+      ~label:(value Value.of_string)
+      ~token_hash:(value value_of_token_hash)
+      ~user_id:(value Value.of_int)
+      ~created_at:(value value_of_time_ns)
+  ;;
+
+  let create_sql =
+    [ [%string
+        {sql|
+    CREATE TABLE IF NOT EXISTS %{table} (
+      label TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      user_id INT NOT NULL REFERENCES %{User.table} (id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+    |sql}]
+    ]
+  ;;
+end
+
 module Post_tag = struct
   type t =
     { post_id : int
     ; tag_id : int
     }
-  [@@deriving fields, compare]
+  [@@deriving fields]
 
   let table = "post_tags"
   let columns = Fields.names
@@ -447,6 +501,7 @@ let create_sql =
     ; Publication.create_sql
     ; News.create_sql
     ; Session.create_sql
+    ; Api_token.create_sql
     ; Post_tag.create_sql
     ]
 ;;

@@ -150,7 +150,7 @@ end
 module Session : sig
   val create
     :  t
-    -> token_hash:string
+    -> token_hash:Token.Hash.t
     -> user_id:int
     -> expires_at:Time_ns.t
     -> Database_schema.Session.t Deferred.Or_error.t
@@ -159,11 +159,34 @@ module Session : sig
       [expires_at] themselves. *)
   val find_by_token_hash
     :  t
-    -> token_hash:string
+    -> token_hash:Token.Hash.t
     -> Database_schema.Session.t option Deferred.Or_error.t
 
-  val delete : t -> token_hash:string -> unit Deferred.Or_error.t
+  (* Succeeds even when there is no matching session, so that logging out is idempotent *)
+  val delete : t -> token_hash:Token.Hash.t -> unit Deferred.Or_error.t
   val delete_expired : t -> now:Time_ns.t -> unit Deferred.Or_error.t
+end
+
+module Api_token : sig
+  (** Fails if [label] or [token_hash] is already taken. *)
+  val create
+    :  t
+    -> label:string
+    -> token_hash:Token.Hash.t
+    -> user_id:int
+    -> created_at:Time_ns.t
+    -> Database_schema.Api_token.t Deferred.Or_error.t
+
+  val find_by_token_hash
+    :  t
+    -> token_hash:Token.Hash.t
+    -> Database_schema.Api_token.t option Deferred.Or_error.t
+
+  (** Keyed by label *)
+  val list : t -> Database_schema.Api_token.t String.Map.t Deferred.Or_error.t
+
+  (** Fails if there is no token labelled [label]. *)
+  val delete : t -> label:string -> unit Deferred.Or_error.t
 end
 
 module For_testing : sig
@@ -176,6 +199,7 @@ module For_testing : sig
     -> ?publication:Database_schema.Publication.t list
     -> ?news:Database_schema.News.t list
     -> ?sessions:Database_schema.Session.t list
+    -> ?api_tokens:Database_schema.Api_token.t list
     -> unit
     -> t
 

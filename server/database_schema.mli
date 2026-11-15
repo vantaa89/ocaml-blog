@@ -8,7 +8,7 @@ open! Import
 val value_of_time_ns : Time_ns.t -> Pgx.Value.t
 
 module type Table = sig
-  type t [@@deriving compare]
+  type t
 
   val table : string
   val columns : string list
@@ -95,9 +95,20 @@ end
 
 module Session : sig
   type t =
-    { token_hash : string
+    { token_hash : Token.Hash.t
     ; user_id : int
     ; expires_at : Time_ns.t
+    }
+
+  include Table with type t := t
+end
+
+module Api_token : sig
+  type t =
+    { label : string
+    ; token_hash : Token.Hash.t
+    ; user_id : int
+    ; created_at : Time_ns.t
     }
 
   include Table with type t := t

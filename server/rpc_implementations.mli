@@ -3,7 +3,7 @@ open! Async
 open! Import
 
 module Connection_state : sig
-  type t = { session_token : string option }
+  type t = { session_token : Token.t option }
 end
 
 (** Implements the RPCs described in {!Rpcs} *)

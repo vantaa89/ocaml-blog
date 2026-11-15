@@ -3,11 +3,29 @@ open! Async
 open! Import
 
 let cookie_name = "sessionid"
+let password = "password"
+
+let user ~id ~username : Database_schema.User.t =
+  { id
+  ; username
+  ; email = "user@example.com"
+  ; password_hash = Password.hash_exn password
+  ; date_joined = Date.of_string "2026-08-01"
+  ; last_login = None
+  }
+;;
 
 type t =
   { port : int
   ; time_source : Time_source.Read_write.t
   }
+
+module Credential = struct
+  type t =
+    [ `Api_token of string
+    | `Session_token of string
+    ]
+end
 
 let with_server db ~f =
   let time_source =
@@ -35,26 +53,32 @@ let with_server db ~f =
 
 let advance_clock t span = Time_source.advance_by_alarms_by t.time_source span
 
-(* The [Cookie] header a browser holding [token] would send. *)
-let cookie_header token =
-  Option.map token ~f:(fun token ->
-    Cohttp.Cookie.Cookie_hdr.serialize [ cookie_name, token ])
-  |> Option.to_list
+let uri ?(scheme = "http") ?(path = "") t =
+  Uri.with_uri
+    ~scheme:(Some scheme)
+    ~host:(Some "127.0.0.1")
+    ~port:(Some t.port)
+    (Uri.of_string path)
 ;;
 
-let post ?origin ?token t ~path params =
-  let server = [%string "http://127.0.0.1:%{t.port#Int}"] in
+let credential_headers credential =
+  match credential with
+  | None -> []
+  | Some (`Api_token api_token) -> [ "authorization", [%string "Bearer %{api_token}"] ]
+  | Some (`Session_token token) ->
+    [ Cohttp.Cookie.Cookie_hdr.serialize [ cookie_name, token ] ]
+;;
+
+let post ?origin ?credential t ~path params =
   let headers =
-    ("origin", Option.value origin ~default:server) :: cookie_header token
+    ("origin", Option.value origin ~default:(Uri.to_string (uri t)))
+    :: credential_headers credential
     |> Cohttp.Header.of_list
   in
   (* [post_form] sets the form content type and encodes [params] with the very function
      the server decodes them with. *)
   let%bind response, body =
-    Cohttp_async.Client.post_form
-      ~headers
-      ~params
-      (Uri.of_string [%string "%{server}%{path}"])
+    Cohttp_async.Client.post_form ~headers ~params (uri t ~path)
   in
   let%map () = Cohttp_async.Body.drain body in
   response
@@ -70,31 +94,41 @@ let login ?origin ?username ?password t =
   let set_cookies =
     Cohttp.Cookie.Set_cookie_hdr.extract (Cohttp.Response.headers response)
   in
-  let token =
+  let credential =
     List.Assoc.find set_cookies cookie_name ~equal:String.equal
-    |> Option.map ~f:Cohttp.Cookie.Set_cookie_hdr.value
+    |> Option.map ~f:(fun cookie ->
+      `Session_token (Cohttp.Cookie.Set_cookie_hdr.value cookie))
   in
-  response, token
+  response, credential
 ;;
 
-let logout ?token t = post ?token t ~path:Urls.logout_path []
+let logout ?credential t = post ?credential t ~path:Urls.logout_path []
 
-let get ?token t ~path =
+let get ?credential t ~path =
   let%bind response, body =
     Cohttp_async.Client.get
-      ~headers:(cookie_header token |> Cohttp.Header.of_list)
-      (Uri.of_string [%string "http://127.0.0.1:%{t.port#Int}%{path}"])
+      ~headers:(credential_headers credential |> Cohttp.Header.of_list)
+      (uri t ~path)
   in
   let%map body = Cohttp_async.Body.to_string body in
   response, body
 ;;
 
-let with_rpc_connection ?token t ~f =
-  let headers = cookie_header token |> Cohttp.Header.of_list in
+let put ?credential t ~path ~body =
+  let%bind response, body =
+    Cohttp_async.Client.put
+      ~headers:(credential_headers credential |> Cohttp.Header.of_list)
+      ~body:(Cohttp_async.Body.of_string body)
+      (uri t ~path)
+  in
+  let%map body = Cohttp_async.Body.to_string body in
+  response, body
+;;
+
+let with_rpc_connection ?credential t ~f =
+  let headers = credential_headers credential |> Cohttp.Header.of_list in
   let%bind connection =
-    Rpc_websocket.Rpc.client
-      ~headers
-      (Uri.of_string [%string "ws://127.0.0.1:%{t.port#Int}%{Urls.websocket_path}"])
+    Rpc_websocket.Rpc.client ~headers (uri ~scheme:"ws" t ~path:Urls.websocket_path)
     >>| ok_exn
   in
   let%bind result = f connection in

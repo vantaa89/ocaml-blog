@@ -3,20 +3,9 @@ open! Async
 open! Import
 
 let () = Log.Global.set_output []
-let username = "author"
-
-(* Spaces and an [&] make the round trip through [Uri] encoding part of the test. *)
-let password = "my secret & password"
-
-let author : Database_schema.User.t =
-  { id = 1
-  ; username
-  ; email = "author@example.com"
-  ; password_hash = Password.hash_exn password
-  ; date_joined = Date.of_string "2026-08-01"
-  ; last_login = None
-  }
-;;
+let author = Server_test_helpers.user ~id:1 ~username:"author"
+let username = author.username
+let password = Server_test_helpers.password
 
 let hidden_post : Database_schema.Post.t =
   { id = 1
@@ -60,8 +49,31 @@ let print_response response =
 let%expect_test "a correct password starts a session" =
   let%bind () =
     with_seeded_server ~f:(fun server ->
-      let%map response, _token = Server_test_helpers.login ~username ~password server in
+      let%map response, _credential =
+        Server_test_helpers.login ~username ~password server
+      in
       print_response response)
+  in
+  [%expect
+    {|
+    ((status 204)
+     (set_cookie
+      ("sessionid=<token of 43 chars>; Max-Age=1209600; path=/; secure; httponly"))) |}];
+  return ()
+;;
+
+let%expect_test "a password with spaces and an [&] survives the form encoding" =
+  let password = "my secret & password" in
+  let%bind () =
+    Server_test_helpers.with_server
+      (Database.For_testing.create_in_memory
+         ~users:[ { author with password_hash = Password.hash_exn password } ]
+         ())
+      ~f:(fun server ->
+        let%map response, _credential =
+          Server_test_helpers.login ~username ~password server
+        in
+        print_response response)
   in
   [%expect
     {|
@@ -73,12 +85,12 @@ let%expect_test "a correct password starts a session" =
 
 let%expect_test "a wrong password and an unknown user are rejected alike" =
   with_seeded_server ~f:(fun server ->
-    let%bind response, _token =
+    let%bind response, _credential =
       Server_test_helpers.login ~username ~password:"not-the-password" server
     in
     print_response response;
     [%expect {| ((status 401) (set_cookie ())) |}];
-    let%bind response, _token =
+    let%bind response, _credential =
       Server_test_helpers.login ~username:"nobody" ~password server
     in
     print_response response;
@@ -88,10 +100,10 @@ let%expect_test "a wrong password and an unknown user are rejected alike" =
 
 let%expect_test "a form without both fields is a bad request" =
   with_seeded_server ~f:(fun server ->
-    let%bind response, _token = Server_test_helpers.login ~username server in
+    let%bind response, _credential = Server_test_helpers.login ~username server in
     print_response response;
     [%expect {| ((status 400) (set_cookie ())) |}];
-    let%bind response, _token = Server_test_helpers.login server in
+    let%bind response, _credential = Server_test_helpers.login server in
     print_response response;
     [%expect {| ((status 400) (set_cookie ())) |}];
     return ())
@@ -99,7 +111,7 @@ let%expect_test "a form without both fields is a bad request" =
 
 let%expect_test "an overlong form is a bad request" =
   with_seeded_server ~f:(fun server ->
-    let%bind response, _token =
+    let%bind response, _credential =
       Server_test_helpers.login ~username ~password:(String.make 5000 'a') server
     in
     print_response response;
@@ -110,7 +122,7 @@ let%expect_test "an overlong form is a bad request" =
 let%expect_test "a login from another origin is refused" =
   let%bind () =
     with_seeded_server ~f:(fun server ->
-      let%map response, _token =
+      let%map response, _credential =
         Server_test_helpers.login ~origin:"http://evil.example" ~username ~password server
       in
       print_response response)
@@ -121,8 +133,10 @@ let%expect_test "a login from another origin is refused" =
 
 let%expect_test "logging out clears the cookie, with or without a session" =
   with_seeded_server ~f:(fun server ->
-    let%bind _response, token = Server_test_helpers.login ~username ~password server in
-    let%bind response = Server_test_helpers.logout ?token server in
+    let%bind _response, credential =
+      Server_test_helpers.login ~username ~password server
+    in
+    let%bind response = Server_test_helpers.logout ?credential server in
     print_response response;
     [%expect
       {|
@@ -139,28 +153,30 @@ let%expect_test "logging out clears the cookie, with or without a session" =
 
 let%expect_test "the session cookie names the user over RPC, until logout" =
   with_seeded_server ~f:(fun server ->
-    let print_current_user ?token () =
-      Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+    let print_current_user ?credential () =
+      Server_test_helpers.with_rpc_connection ?credential server ~f:(fun connection ->
         let%map user = Rpc.Rpc.dispatch_exn Rpcs.Get_current_user.rpc connection () in
         print_s [%sexp (user : Rpcs.Get_current_user.Response.t)])
     in
-    let%bind _response, token = Server_test_helpers.login ~username ~password server in
-    let%bind () = print_current_user ?token () in
+    let%bind _response, credential =
+      Server_test_helpers.login ~username ~password server
+    in
+    let%bind () = print_current_user ?credential () in
     [%expect {| (Logged_in (username author)) |}];
     (* A connection without the cookie is anonymous. *)
     let%bind () = print_current_user () in
     [%expect {| Not_logged_in |}];
-    let%bind (_ : Cohttp.Response.t) = Server_test_helpers.logout ?token server in
-    (* The same token no longer names a session. *)
-    let%bind () = print_current_user ?token () in
+    let%bind (_ : Cohttp.Response.t) = Server_test_helpers.logout ?credential server in
+    (* The same session token no longer names a session. *)
+    let%bind () = print_current_user ?credential () in
     [%expect {| Not_logged_in |}];
     return ())
 ;;
 
 let%expect_test "a hidden post is visible only to its author" =
   with_seeded_server ~f:(fun server ->
-    let print_draft ?token () =
-      Server_test_helpers.with_rpc_connection ?token server ~f:(fun connection ->
+    let print_draft ?credential () =
+      Server_test_helpers.with_rpc_connection ?credential server ~f:(fun connection ->
         let%map post =
           Rpc.Rpc.dispatch_exn Rpcs.Get_post.rpc connection { slug = hidden_post.slug }
         in
@@ -170,24 +186,31 @@ let%expect_test "a hidden post is visible only to its author" =
     (* Knowing the slug is not enough. *)
     let%bind () = print_draft () in
     [%expect {| () |}];
-    let%bind _response, token = Server_test_helpers.login ~username ~password server in
-    let%bind () = print_draft ?token () in
+    let%bind _response, credential =
+      Server_test_helpers.login ~username ~password server
+    in
+    let%bind () = print_draft ?credential () in
     [%expect {| (Draft) |}];
     return ())
 ;;
 
 let%expect_test "a hidden post's page is 404 to everyone but its author" =
   with_seeded_server ~f:(fun server ->
-    let print_status ?token () =
+    let print_status ?credential () =
       let%map response, _body =
-        Server_test_helpers.get ?token server ~path:[%string "/post/%{hidden_post.slug}"]
+        Server_test_helpers.get
+          ?credential
+          server
+          ~path:[%string "/post/%{hidden_post.slug}"]
       in
       print_s [%sexp (Cohttp.Response.status response : Cohttp.Code.status_code)]
     in
     let%bind () = print_status () in
     [%expect {| Not_found |}];
-    let%bind _response, token = Server_test_helpers.login ~username ~password server in
-    let%bind () = print_status ?token () in
+    let%bind _response, credential =
+      Server_test_helpers.login ~username ~password server
+    in
+    let%bind () = print_status ?credential () in
     [%expect {| OK |}];
     return ())
 ;;
@@ -195,7 +218,7 @@ let%expect_test "a hidden post's page is 404 to everyone but its author" =
 let%expect_test "repeated failures lock a username out" =
   with_seeded_server ~f:(fun server ->
     let wrong_password () =
-      let%map response, _token =
+      let%map response, _credential =
         Server_test_helpers.login ~username ~password:"not-the-password" server
       in
       print_response response
@@ -215,11 +238,13 @@ let%expect_test "repeated failures lock a username out" =
     let%bind () = wrong_password () in
     [%expect {| ((status 429) (set_cookie ())) |}];
     (* Even the right password is turned away while the count stands. *)
-    let%bind response, _token = Server_test_helpers.login ~username ~password server in
+    let%bind response, _credential =
+      Server_test_helpers.login ~username ~password server
+    in
     print_response response;
     [%expect {| ((status 429) (set_cookie ())) |}];
     (* Another name has its own count. *)
-    let%bind response, _token =
+    let%bind response, _credential =
       Server_test_helpers.login ~username:"nobody" ~password:"not-the-password" server
     in
     print_response response;
@@ -231,7 +256,9 @@ let%expect_test "repeated failures lock a username out" =
         server
         Time_ns.Span.(Config.default.login_attempt_window + of_sec 1.)
     in
-    let%bind response, _token = Server_test_helpers.login ~username ~password server in
+    let%bind response, _credential =
+      Server_test_helpers.login ~username ~password server
+    in
     print_response response;
     [%expect
       {|

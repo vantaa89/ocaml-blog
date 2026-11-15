@@ -14,6 +14,7 @@ type t =
       ; news : Database_schema.News.t list ref
       ; last_id : int ref
       ; sessions : Database_schema.Session.t list ref
+      ; api_tokens : Database_schema.Api_token.t list ref
       }
 
 let is_unique rows ~field ~value =
@@ -667,10 +668,10 @@ module News = struct
   let delete t ~id =
     match t with
     | Mock { news; _ } ->
-      (match List.exists !news ~f:(fun news -> news.id = id) with
-       | false -> Deferred.Or_error.error_s [%message "No such news" (id : int)]
-       | true ->
-         news := List.filter !news ~f:(fun news -> news.id <> id);
+      (match List.partition_tf !news ~f:(fun news -> news.id = id) with
+       | [], _ -> Deferred.Or_error.error_s [%message "No such news" (id : int)]
+       | _ :: _, rest ->
+         news := rest;
          Deferred.Or_error.return ())
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
@@ -693,13 +694,17 @@ module Session = struct
     match t with
     | Mock { sessions; _ } ->
       (match
-         is_unique !sessions ~field:(fun session -> session.token_hash) ~value:token_hash
+         is_unique
+           !sessions
+           ~field:(fun session -> Token.Hash.to_string session.token_hash)
+           ~value:(Token.Hash.to_string token_hash)
        with
        | false ->
          Deferred.return
            (Or_error.error_s
               [%message
-                "duplicate key value violates unique constraint" (token_hash : string)])
+                "duplicate key value violates unique constraint"
+                  (token_hash : Token.Hash.t)])
        | true ->
          sessions := session :: !sessions;
          Deferred.Or_error.return session)
@@ -709,7 +714,7 @@ module Session = struct
           Pgx_async.execute_unit
             connection
             ~params:
-              [ Pgx_async.Value.of_string token_hash
+              [ Pgx_async.Value.of_string (Token.Hash.to_string token_hash)
               ; Pgx_async.Value.of_int user_id
               ; Database_schema.value_of_time_ns expires_at
               ]
@@ -725,14 +730,15 @@ module Session = struct
   let find_by_token_hash t ~token_hash =
     match t with
     | Mock { sessions; _ } ->
-      List.find !sessions ~f:(fun session -> String.equal session.token_hash token_hash)
+      List.find !sessions ~f:(fun session ->
+        Token.Hash.equal session.token_hash token_hash)
       |> Deferred.Or_error.return
     | Real { connection } ->
       find_unique
         (module Database_schema.Session)
         connection
         ~where:"token_hash = $1"
-        ~param:(Pgx_async.Value.of_string token_hash)
+        ~param:(Pgx_async.Value.of_string (Token.Hash.to_string token_hash))
   ;;
 
   let delete t ~token_hash =
@@ -740,13 +746,13 @@ module Session = struct
     | Mock { sessions; _ } ->
       sessions
       := List.filter !sessions ~f:(fun session ->
-           not (String.equal session.token_hash token_hash));
+           not (Token.Hash.equal session.token_hash token_hash));
       Deferred.Or_error.return ()
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
         Pgx_async.execute_unit
           connection
-          ~params:[ Pgx_async.Value.of_string token_hash ]
+          ~params:[ Pgx_async.Value.of_string (Token.Hash.to_string token_hash) ]
           [%string "DELETE FROM %{Database_schema.Session.table} WHERE token_hash = $1"])
   ;;
 
@@ -765,6 +771,101 @@ module Session = struct
   ;;
 end
 
+module Api_token = struct
+  let create t ~label ~token_hash ~user_id ~created_at =
+    let api_token : Database_schema.Api_token.t =
+      { label; token_hash; user_id; created_at }
+    in
+    match t with
+    | Mock { api_tokens; _ } ->
+      (match
+         ( is_unique !api_tokens ~field:(fun api_token -> api_token.label) ~value:label
+         , is_unique
+             !api_tokens
+             ~field:(fun api_token -> Token.Hash.to_string api_token.token_hash)
+             ~value:(Token.Hash.to_string token_hash) )
+       with
+       | true, true ->
+         api_tokens := api_token :: !api_tokens;
+         Deferred.Or_error.return api_token
+       | false, _ | _, false ->
+         Deferred.Or_error.error_s
+           [%message "duplicate key value violates unique constraint" (label : string)])
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let%map () =
+          Pgx_async.execute_unit
+            connection
+            ~params:(Database_schema.Api_token.to_row api_token)
+            [%string
+              {sql|
+            INSERT INTO %{Database_schema.Api_token.table} (label, token_hash, user_id, created_at)
+            VALUES ($1, $2, $3, $4)
+            |sql}]
+        in
+        api_token)
+  ;;
+
+  let find_by_token_hash t ~token_hash =
+    match t with
+    | Mock { api_tokens; _ } ->
+      List.find !api_tokens ~f:(fun api_token ->
+        Token.Hash.equal api_token.token_hash token_hash)
+      |> Deferred.Or_error.return
+    | Real { connection } ->
+      find_unique
+        (module Database_schema.Api_token)
+        connection
+        ~where:"token_hash = $1"
+        ~param:(Pgx_async.Value.of_string (Token.Hash.to_string token_hash))
+  ;;
+
+  let list t =
+    match t with
+    | Mock { api_tokens; _ } ->
+      String.Map.of_list_with_key_or_error !api_tokens ~get_key:(fun api_token ->
+        api_token.label)
+      |> Deferred.return
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let columns = String.concat ~sep:", " Database_schema.Api_token.columns in
+        let%map rows =
+          Pgx_async.execute
+            connection
+            [%string "SELECT %{columns} FROM %{Database_schema.Api_token.table}"]
+        in
+        List.map rows ~f:Database_schema.Api_token.of_row
+        |> String.Map.of_list_with_key_exn ~get_key:(fun api_token -> api_token.label))
+  ;;
+
+  let delete t ~label =
+    match t with
+    | Mock { api_tokens; _ } ->
+      (match
+         List.partition_tf !api_tokens ~f:(fun api_token ->
+           String.equal api_token.label label)
+       with
+       | [], _ ->
+         Deferred.Or_error.error_s [%message "No such API token" (label : string)]
+       | _ :: _, rest ->
+         api_tokens := rest;
+         Deferred.Or_error.return ())
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let%map rows =
+          Pgx_async.execute
+            connection
+            ~params:[ Pgx_async.Value.of_string label ]
+            [%string
+              "DELETE FROM %{Database_schema.Api_token.table} WHERE label = $1 RETURNING \
+               label"]
+        in
+        match rows with
+        | [] -> raise_s [%message "No such API token" (label : string)]
+        | _ :: _ -> ())
+  ;;
+end
+
 module For_testing = struct
   let create_in_memory
         ?(posts = [])
@@ -775,6 +876,7 @@ module For_testing = struct
         ?(publication = [])
         ?(news = [])
         ?(sessions = [])
+        ?(api_tokens = [])
         ()
     =
     Mock
@@ -797,6 +899,7 @@ module For_testing = struct
           |> List.fold ~init:0 ~f:Int.max
           |> ref
       ; sessions = ref sessions
+      ; api_tokens = ref api_tokens
       }
   ;;
 

@@ -10,6 +10,7 @@ module Http_route = struct
   type t =
     | Media of { path : string }
     | Static of { path : string }
+    | Api of Api.Endpoint.t
     | Page
     | Login
     | Logout
@@ -33,10 +34,10 @@ module Http_route = struct
              | Not_found _ -> return Not_found
              | Post { slug } | Edit_post { slug } ->
                let%bind viewer =
-                 Authenticator.current_user_id
+                 Session_authenticator.current_user_id
                    ~db
                    ~now
-                   ~session_token:(Authenticator.session_token request)
+                   ~session_token:(Session_authenticator.token request)
                  >>| ok_exn
                in
                (match%map Database.Post.find_by_slug db ~slug >>| ok_exn with
@@ -47,10 +48,21 @@ module Http_route = struct
                    | false -> Not_found))
              | Home | Posts _ | New_post | About | Search _ | Login -> return Page)))
     | `POST ->
-      (match segments with
-       | [ "login" ] -> return Login
-       | [ "logout" ] -> return Logout
-       | _ -> return Not_found)
+      let route =
+        match segments with
+        | [ "login" ] -> Login
+        | [ "logout" ] -> Logout
+        | _ -> Not_found
+      in
+      return route
+    | `PUT ->
+      let route =
+        match segments with
+        | [ "api"; "about" ] -> Api About
+        | [ "api"; "cv" ] -> Api Cv
+        | _ -> Not_found
+      in
+      return route
     | _ -> return Not_found
   ;;
 end
@@ -99,20 +111,21 @@ let serve_index ~static_dir ~status =
 ;;
 
 let serve ~time_source db (config : Config.t) =
-  let authenticator = Authenticator.create ~config ~time_source in
+  let session_authenticator = Session_authenticator.create ~config ~time_source in
   let http_handler (config : Config.t) () ~body _address request =
-    let meth = Cohttp.Request.meth request in
+    let now = Time_source.now time_source in
+    let%bind route = Http_route.of_request ~db ~now request in
     let dispatch () =
-      let now = Time_source.now time_source in
-      match%bind Http_route.of_request ~db ~now request with
+      match route with
       | Media { path } -> serve_file ~docroot:config.media_dir ~path
       | Static { path } -> serve_file ~docroot:config.static_dir ~path
       | Page -> serve_index ~static_dir:config.static_dir ~status:`OK
-      | Login -> Authenticator.login authenticator ~db ~now ~body request
-      | Logout -> Authenticator.logout ~db request
+      | Login -> Session_authenticator.login session_authenticator ~db ~now ~body request
+      | Logout -> Session_authenticator.logout ~db request
+      | Api endpoint -> Api.respond ~db ~media_dir:config.media_dir ~body endpoint request
       | Not_found -> serve_index ~static_dir:config.static_dir ~status:`Not_found
     in
-    match meth with
+    match Cohttp.Request.meth request with
     | `GET -> dispatch ()
     | `HEAD ->
       let%bind response, body = dispatch () in
@@ -122,7 +135,13 @@ let serve ~time_source db (config : Config.t) =
     | `POST | `PUT | `PATCH | `DELETE | `CONNECT | `OPTIONS | `TRACE | `Other _ ->
       (* A status-changing method should be checked for same-origin. [`GET] and [`HEAD]
          are exempt because browsers omit [Origin] on ordinary navigations. *)
-      with_same_origin_check request ~f:dispatch
+      (match route with
+       | Api _ (* Token-authenticated APIs are exempted from same-origin check *)
+       | Not_found
+         (* This enables API requests with wrong path to see a 404 rather than a 403 *) ->
+         dispatch ()
+       | Media _ | Static _ | Page | Login | Logout ->
+         with_same_origin_check request ~f:dispatch)
   in
   Rpc_websocket.Rpc.serve
     ~where_to_listen:(Tcp.Where_to_listen.of_port config.port)
@@ -131,7 +150,7 @@ let serve ~time_source db (config : Config.t) =
       let session_token =
         match (initiated_from : Rpc_websocket.Rpc.Connection_initiated_from.t) with
         | Tcp -> None
-        | Websocket_request request -> Authenticator.session_token request
+        | Websocket_request request -> Session_authenticator.token request
       in
       { session_token })
     ~http_handler:(http_handler config)

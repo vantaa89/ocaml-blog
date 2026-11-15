@@ -2,18 +2,20 @@ open! Core
 open! Async
 open! Import
 
-(** The blog's single listening port, which serves two things at once:
+(** The blog's single listening port, which serves three things at once:
 
   1) the RPCs of [Rpcs], over a websocket, implemented by [Rpc_implementations];
-  2) the frontend assets, over plain HTTP, routed by [Http_route].
+  2) the frontend assets, over plain HTTP, routed by [Http_route];
+  3) the endpoints of [Api], authenticated by an API token rather than a session.
 
-  Both share one [Cohttp_async] server, because a websocket connection is itself
+  All share one [Cohttp_async] server, because a websocket connection is itself
   established by an HTTP upgrade request. *)
 
 module Http_route : sig
   type t =
     | Media of { path : string }
     | Static of { path : string }
+    | Api of Api.Endpoint.t
     | Page (* Single-page application at [index.html] *)
     | Login
     | Logout
