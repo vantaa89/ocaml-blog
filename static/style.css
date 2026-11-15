@@ -386,7 +386,7 @@ h1#title {
 .about-content h2 ~ h2{
     margin-top: 20px;
     padding-top: 30px;
-    border-top: 1px dashed gray;
+    border-top: 1px dashed rgb(128 128 128 / 25%);
 }
 
 .about-content h2 em{  /* section note */
@@ -399,11 +399,13 @@ h1#title {
 
 .about-content h3{
     font-size: larger;
+    font-weight: normal;  /* only the <strong> part is bold, as in the PDF */
     margin: 10px 0 0 0;
 }
 
 .about-content h4{
     font-size: large;
+    font-weight: normal;
     margin: 5px 0 0 0;
 }
 
