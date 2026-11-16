@@ -25,6 +25,10 @@ let create_token ~db ~label ~user_id ~now =
 ;;
 
 let respond ~db ~media_dir ~body endpoint request =
+  (* Behind a reverse proxy, only this header knows the client. *)
+  let forwarded_for =
+    Cohttp.Header.get (Cohttp.Request.headers request) "x-forwarded-for"
+  in
   let%bind result =
     let open Deferred.Or_error.Let_syntax in
     let%bind api_token =
@@ -59,7 +63,10 @@ let respond ~db ~media_dir ~body endpoint request =
                   let%bind content = Cohttp_async.Body.to_string body |> Deferred.ok in
                   Log.Global.info_s
                     [%message
-                      "API request" ~token:(label : string) (endpoint : Endpoint.t)];
+                      "API request"
+                        ~token:(label : string)
+                        (endpoint : Endpoint.t)
+                        (forwarded_for : string option)];
                   (match endpoint with
                    | About ->
                      (match Soup.parse content |> Soup.select_one "body" with
