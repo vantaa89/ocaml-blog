@@ -621,6 +621,9 @@ h1#title {
 .about-content{
     --about-body: #414141;
     --about-secondary: #606068;
+    /* The right column fits "Mar. 2023 - Sep. 2024"; a longer period overhangs to the
+       left instead of narrowing every row */
+    --about-columns: minmax(0, 1fr) 8.75rem;
     font-size: 1rem;
     line-height: 1.5;
     color: var(--about-body);
@@ -681,13 +684,11 @@ h1#title {
     letter-spacing: 0;
 }
 
-/* An entry or honor puts its location and dates in a right column. The column fits
-   "Mar. 2023 - Sep. 2024"; a longer period overhangs to the left instead of
-   narrowing every role. */
 .about-content .entry,
+.about-content .position,
 .about-content .honor{
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 8.75rem;
+    grid-template-columns: var(--about-columns);
     column-gap: 12px;
     align-items: baseline;
 }
@@ -702,7 +703,11 @@ h1#title {
     margin-bottom: 24px;
 }
 
-.about-content .role{
+.about-content .positions{  /* role and dates, one .position per role */
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     margin-top: 2px;
 }
 
@@ -746,18 +751,21 @@ h1#title {
         font-size: 1.25rem;
     }
 
-    .about-content .entry,
-    .about-content .honor{
-        grid-template-columns: minmax(0, 1fr) auto;
+    .about-content{
+        --about-columns: minmax(0, 1fr) auto;
     }
 
-    /* Honors keep the year beside them; a full period goes under the role instead */
-    .about-content .role,
-    .about-content .entry .time{
-        grid-column: 1 / -1;
+    /* Honors keep the year beside them; a full period goes under the role instead,
+       so each role stays visibly paired with its own dates */
+    .about-content .positions{
+        gap: 10px;
     }
 
-    .about-content .entry .time{
+    .about-content .position{
+        display: block;
+    }
+
+    .about-content .position .time{
         justify-self: start;
         margin-top: 2px;
     }
