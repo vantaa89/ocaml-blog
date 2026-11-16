@@ -494,7 +494,7 @@ let for_author page =
   | Not_logged_in ->
     Bonsai.const
       (Vdom.Node.div
-         ~attrs:[ Vdom.Attr.classes [ "custom-container"; "my-3" ] ]
+         ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page" ] ]
          [ Vdom.Node.p
              [ Vdom.Node.text "Only the author can write posts. "
              ; Client_utils.link Login [ Vdom.Node.text "Log in" ]

@@ -37,7 +37,7 @@ let profile_node =
     Owner_profile.info
   in
   Vdom.Node.div
-    ~attrs:[ Vdom.Attr.id "main-profile"; Vdom.Attr.class_ "my-3" ]
+    ~attrs:[ Vdom.Attr.id "main-profile" ]
     [ Vdom.Node.div
         ~attrs:[ Vdom.Attr.class_ "main-profile-text" ]
         [ Vdom.Node.div
@@ -69,12 +69,7 @@ let profile_node =
 ;;
 
 let publication_node ({ title; image_url; authors; journal; link } : Rpcs.Publication.t) =
-  let image =
-    Vdom.Node.img
-      ~attrs:
-        [ Vdom.Attr.src image_url; Vdom.Attr.class_ "img-fluid"; Vdom.Attr.alt title ]
-      ()
-  in
+  let image = Vdom.Node.img ~attrs:[ Vdom.Attr.src image_url; Vdom.Attr.alt title ] () in
   let title_node =
     match link with
     | Some link ->
@@ -89,15 +84,15 @@ let publication_node ({ title; image_url; authors; journal; link } : Rpcs.Public
         ~html:(Markdown_renderer.render ~markdown:title)
   in
   Vdom.Node.div
-    ~attrs:[ Vdom.Attr.classes [ "row"; "my-2"; "align-items-center" ] ]
+    ~attrs:[ Vdom.Attr.class_ "publication" ]
     [ Vdom.Node.div
-        ~attrs:[ Vdom.Attr.classes [ "col-4"; "col-md-3" ] ]
+        ~attrs:[ Vdom.Attr.class_ "publication-image" ]
         [ (match link with
            | Some link -> Vdom.Node.a ~attrs:[ Vdom.Attr.href link ] [ image ]
            | None -> image)
         ]
     ; Vdom.Node.div
-        ~attrs:[ Vdom.Attr.classes [ "col-8"; "col-md-9"; "publication-text" ] ]
+        ~attrs:[ Vdom.Attr.class_ "publication-text" ]
         [ title_node
         ; html_node
             ~tag:"div"
@@ -118,18 +113,15 @@ let news_node index ({ content; date } : Rpcs.News.t) =
     ~attrs:
       [ Vdom.Attr.classes
           ("news-entry"
-           :: "row"
            ::
            (match index >= news_preview_count with
             | true -> [ "extra-news" ]
             | false -> []))
       ]
     [ Vdom.Node.div
-        ~attrs:[ Vdom.Attr.classes [ "news-date"; "col-sm-4"; "col-md-2" ] ]
+        ~attrs:[ Vdom.Attr.class_ "news-date" ]
         [ Vdom.Node.p [ Vdom.Node.text [%string "%{month}. %{year#Int}"] ] ]
-    ; Vdom.Node.div
-        ~attrs:[ Vdom.Attr.classes [ "col-sm-8"; "col-md-10" ] ]
-        [ Vdom.Node.p [ Vdom.Node.text content ] ]
+    ; Vdom.Node.div [ Vdom.Node.p [ Vdom.Node.text content ] ]
     ]
 ;;
 
@@ -177,19 +169,16 @@ let home =
           ]
     in
     Vdom.Node.div
-      ~attrs:[ Vdom.Attr.classes [ "custom-container"; "my-3" ]; Vdom.Attr.id "main" ]
+      ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page" ]; Vdom.Attr.id "main" ]
       [ profile_node
-      ; html_node
-          ~tag:"div"
-          ~attrs:[ Vdom.Attr.id "main-intro"; Vdom.Attr.class_ "my-3" ]
-          ~html:intro_html
+      ; html_node ~tag:"div" ~attrs:[ Vdom.Attr.id "main-intro" ] ~html:intro_html
       ; Vdom.Node.hr ()
-      ; Vdom.Node.h3 ~attrs:[ Vdom.Attr.class_ "my-3" ] [ Vdom.Node.text "Publications" ]
+      ; Vdom.Node.h3 [ Vdom.Node.text "Publications" ]
       ; Vdom.Node.div
           ~attrs:[ Vdom.Attr.id "main-publications" ]
           (List.map response.publications ~f:publication_node)
       ; Vdom.Node.hr ()
-      ; Vdom.Node.h3 ~attrs:[ Vdom.Attr.class_ "my-3" ] [ Vdom.Node.text "Recent Posts" ]
+      ; Vdom.Node.h3 [ Vdom.Node.text "Recent Posts" ]
       ; Vdom.Node.div
           ~attrs:[ Vdom.Attr.id "main-recent-posts" ]
           (List.map response.recent_posts ~f:Client_utils.post_card)
@@ -250,7 +239,7 @@ let post_list_node
       ()
   =
   Vdom.Node.div
-    ~attrs:[ Vdom.Attr.classes [ "custom-container"; "my-3" ] ]
+    ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page" ] ]
     [ Vdom.Node.h1 [ Vdom.Node.text heading ]
     ; (match match_count with
        | None -> Vdom.Node.none
@@ -525,8 +514,7 @@ let post_detail ~slug =
             ]
       in
       Vdom.Node.div
-        ~attrs:
-          [ Vdom.Attr.classes [ "container"; "custom-container"; "py-3"; "post-detail" ] ]
+        ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page"; "post-detail" ] ]
         [ Vdom.Node.div
             ~attrs:[ Vdom.Attr.class_ "post-detail-header" ]
             [ Vdom.Node.div
@@ -586,8 +574,7 @@ let about =
       ; html_node
           ~tag:"div"
           ~attrs:
-            [ Vdom.Attr.classes
-                [ "container"; "custom-container"; "py-3"; "about-content" ]
+            [ Vdom.Attr.classes [ "custom-container"; "page"; "about-content" ]
             ; Vdom.Attr.id "about"
             ]
           ~html

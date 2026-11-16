@@ -2,14 +2,12 @@ open! Core
 open! Import
 open Bonsai.Let_syntax
 
-let navbar ~search_trigger =
+let navbar ~search_trigger ~menu_open ~set_menu_open =
   Vdom.Node.create
     "nav"
-    ~attrs:
-      [ Vdom.Attr.classes [ "navbar"; "navbar-expand-lg"; "navbar-light"; "bg-light" ] ]
+    ~attrs:[ Vdom.Attr.class_ "navbar" ]
     [ Vdom.Node.div
-        ~attrs:
-          [ Vdom.Attr.classes [ "container-fluid"; "container"; "custom-container" ] ]
+        ~attrs:[ Vdom.Attr.classes [ "custom-container"; "navbar-inner" ] ]
         [ Client_utils.link
             ~attrs:[ Vdom.Attr.class_ "navbar-brand" ]
             Home
@@ -24,18 +22,21 @@ let navbar ~search_trigger =
             ~attrs:
               [ Vdom.Attr.class_ "navbar-toggler"
               ; Vdom.Attr.type_ "button"
-              ; Vdom.Attr.style (Css_gen.create ~field:"border" ~value:"none")
-              ; Vdom.Attr.create "data-bs-toggle" "collapse"
-              ; Vdom.Attr.create "data-bs-target" "#navbarNavDropdown"
-              ; Vdom.Attr.create "aria-controls" "navbarNavDropdown"
-              ; Vdom.Attr.create "aria-expanded" "false"
+              ; Vdom.Attr.create "aria-controls" "navbar-menu"
+              ; Vdom.Attr.create "aria-expanded" (Bool.to_string menu_open)
               ; Vdom.Attr.create "aria-label" "Toggle navigation"
+              ; Vdom.Attr.on_click (fun _ -> set_menu_open (not menu_open))
               ]
             [ Vdom.Node.span ~attrs:[ Vdom.Attr.class_ "navbar-toggler-icon" ] [] ]
         ; Vdom.Node.div
             ~attrs:
-              [ Vdom.Attr.classes [ "collapse"; "navbar-collapse" ]
-              ; Vdom.Attr.id "navbarNavDropdown"
+              [ Vdom.Attr.classes
+                  ("navbar-menu"
+                   ::
+                   (match menu_open with
+                    | true -> [ "open" ]
+                    | false -> []))
+              ; Vdom.Attr.id "navbar-menu"
               ]
             [ Vdom.Node.ul
                 ~attrs:[ Vdom.Attr.class_ "navbar-nav" ]
@@ -62,7 +63,7 @@ let navbar ~search_trigger =
                     ]
                 ]
             ; Vdom.Node.span
-                ~attrs:[ Vdom.Attr.classes [ "nav-item"; "ms-auto" ] ]
+                ~attrs:[ Vdom.Attr.classes [ "nav-item"; "navbar-search" ] ]
                 [ Vdom.Node.ul
                     ~attrs:[ Vdom.Attr.class_ "navbar-nav" ]
                     [ Vdom.Node.li
@@ -134,8 +135,11 @@ let component =
   in
   let%sub now = Bonsai.Clock.approx_now ~tick_every:(Time_ns.Span.of_hr 1.) in
   let%sub current_user = Session.current_user in
+  let%sub menu_open, set_menu_open = Bonsai.state (module Bool) ~default_model:false in
   let%arr page = page
   and search_trigger = search_trigger
+  and menu_open = menu_open
+  and set_menu_open = set_menu_open
   and search_modal = search_modal
   and now = now
   and current_user = current_user in
@@ -146,5 +150,9 @@ let component =
     | Error _ -> Effect.Ignore
   in
   Vdom.Node.div
-    [ navbar ~search_trigger; page; footer ~year ~current_user ~log_out; search_modal ]
+    [ navbar ~search_trigger ~menu_open ~set_menu_open
+    ; page
+    ; footer ~year ~current_user ~log_out
+    ; search_modal
+    ]
 ;;

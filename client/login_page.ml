@@ -23,14 +23,11 @@ end
 
 let field ~id ~label ~type_ ~value ~on_input =
   Vdom.Node.div
-    ~attrs:[ Vdom.Attr.class_ "mb-3" ]
-    [ Vdom.Node.label
-        ~attrs:[ Vdom.Attr.class_ "form-label"; Vdom.Attr.for_ id ]
-        [ Vdom.Node.text label ]
+    ~attrs:[ Vdom.Attr.class_ "login-field" ]
+    [ Vdom.Node.label ~attrs:[ Vdom.Attr.for_ id ] [ Vdom.Node.text label ]
     ; Vdom.Node.input
         ~attrs:
           [ Vdom.Attr.type_ type_
-          ; Vdom.Attr.class_ "form-control"
           ; Vdom.Attr.id id
           ; Vdom.Attr.name id
           ; Vdom.Attr.value_prop value
@@ -65,7 +62,7 @@ let component =
     | `Failed (_ : Error.t) -> inject (Failed "Could not log in. Please try again.")
   in
   Vdom.Node.div
-    ~attrs:[ Vdom.Attr.classes [ "container"; "custom-container"; "py-3" ] ]
+    ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page"; "login" ] ]
     [ Vdom.Node.h1 [ Vdom.Node.text "Log in" ]
     ; Vdom.Node.create
         "form"
@@ -88,11 +85,10 @@ let component =
            | None -> Vdom.Node.none
            | Some error ->
              Vdom.Node.div
-               ~attrs:[ Vdom.Attr.classes [ "alert"; "alert-danger" ] ]
+               ~attrs:[ Vdom.Attr.class_ "login-error" ]
                [ Vdom.Node.text error ])
         ; Vdom.Node.button
-            ~attrs:
-              [ Vdom.Attr.type_ "submit"; Vdom.Attr.classes [ "btn"; "btn-primary" ] ]
+            ~attrs:[ Vdom.Attr.type_ "submit"; Vdom.Attr.class_ "login-submit" ]
             [ Vdom.Node.text "Log in" ]
         ]
     ]
