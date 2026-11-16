@@ -677,15 +677,11 @@ h1#title {
 }
 
 .about-content h3{  /* the place follows the <strong> name as plain text */
-    font-size: 0.875rem;
+    font-size: 1rem;
     font-weight: normal;
     line-height: 1.4;
     margin: 24px 0 0 0;
     color: var(--about-muted);
-}
-
-.about-content h3 strong{
-    font-size: 1.0625rem;
 }
 
 .about-content h4{
