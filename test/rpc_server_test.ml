@@ -115,6 +115,27 @@ let%expect_test "the page carries the site's name and description" =
   return ()
 ;;
 
+let%expect_test "the page carries the content security policy" =
+  let print_policy server ~path =
+    let%map response, _body = Server_test_helpers.get server ~path in
+    print_s
+      [%sexp
+        (Cohttp.Header.get (Cohttp.Response.headers response) "content-security-policy"
+         : string option)]
+  in
+  with_seeded_server ~f:(fun server ->
+    let%bind () = print_policy server ~path:"/" in
+    [%expect
+      {| ("script-src 'self' https://cdn.jsdelivr.net; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'") |}];
+    let%bind () = print_policy server ~path:"/post/hello-world" in
+    [%expect
+      {| ("script-src 'self' https://cdn.jsdelivr.net; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'") |}];
+    let%bind () = print_policy server ~path:"/no-such-page" in
+    [%expect
+      {| ("script-src 'self' https://cdn.jsdelivr.net; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'") |}];
+    return ())
+;;
+
 let%expect_test "a path that is no page, or names no post, is answered with status 404" =
   let print_status server ~path =
     let%map response, body = Server_test_helpers.get server ~path in

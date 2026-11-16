@@ -106,7 +106,14 @@ let serve_index ~static_dir ~status =
     in
     Server.respond_string
       ~status
-      ~headers:(Cohttp.Header.of_list [ "content-type", "text/html; charset=utf-8" ])
+      ~headers:
+        (Cohttp.Header.of_list
+           [ "content-type", "text/html; charset=utf-8"
+             (* The about post's HTML and markdown's raw HTML are shown as they are *)
+           ; ( "content-security-policy"
+             , "script-src 'self' https://cdn.jsdelivr.net; object-src 'none'; frame-src \
+                'none'; base-uri 'none'; form-action 'self'" )
+           ])
       html
 ;;
 
