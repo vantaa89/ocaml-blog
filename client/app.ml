@@ -103,7 +103,7 @@ let footer ~year ~(current_user : Rpcs.Get_current_user.Response.t) ~log_out =
     "nav"
     ~attrs:[ Vdom.Attr.class_ "footer" ]
     [ Vdom.Node.p
-        [ Vdom.Node.text [%string "© 2024 - %{year#Int} %{Owner_profile.info.name}"] ]
+        [ Vdom.Node.text [%string "© 2024–%{year#Int} %{Owner_profile.info.name}"] ]
     ; session_node
     ]
 ;;

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import url("https://spoqa.github.io/spoqa-han-sans/css/SpoqaHanSans-kr.css");
 @import url("https://fonts.cdnfonts.com/css/fira-mono");
 
@@ -615,13 +615,12 @@ h1#title {
 
 /* about 페이지 */
 
-/* The CV comes from Typst: h2 sections, each followed by .entry, .honor or .skill
-   items, or by .courses or the bibliography. Items space themselves with
+/* The CV comes from Typst: h2 sections, each followed by .entry, .honor or .group
+   items, or by the bibliography. Items space themselves with
    margin-bottom, which collapses into the next h2's margin-top. */
 .about-content{
     --about-body: #414141;
     --about-secondary: #606068;
-    --about-chip: #F1F1F3;
     font-size: 1rem;
     line-height: 1.5;
     color: var(--about-body);
@@ -670,7 +669,8 @@ h1#title {
 .about-content .location,
 .about-content .time,
 .about-content .note,
-.about-content .details{
+.about-content .details,
+.about-content .updated{
     font-size: 0.875rem;
     color: var(--about-secondary);
 }
@@ -698,7 +698,7 @@ h1#title {
     white-space: nowrap;
 }
 
-.about-content .entry{
+.about-content .item{  /* entries, and groups of skills or courses */
     margin-bottom: 24px;
 }
 
@@ -714,28 +714,10 @@ h1#title {
     margin-bottom: 8px;
 }
 
-.about-content .skill{
-    margin-bottom: 16px;
-}
-
-.about-content .chips{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
-}
-
-.about-content .chips li{
-    padding: 3px 12px;
-    font-size: 0.875rem;
-    background-color: var(--about-chip);
-    border-radius: 999px;
-}
-
-.about-content .courses ul{
+.about-content .group{  /* a label over a line of items: skills, courses */
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
 }
 
 .about-content [role="doc-bibliography"] ul{
@@ -757,7 +739,6 @@ h1#title {
 
 .about-content .updated{
     margin-top: 32px;
-    color: var(--about-secondary);
 }
 
 @media (max-width: 640px){
