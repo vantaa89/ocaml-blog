@@ -41,35 +41,37 @@ let respond ~db ~media_dir ~body endpoint request =
     match api_token with
     | None -> return (`Unauthorized, "Expected a valid API token")
     | Some { label; user_id; _ } ->
-      (match Cohttp.Request.encoding request with
-       | Chunked | Unknown ->
-         (* A body with an unknown length is rejected to avoid OOM *)
-         return (`Length_required, "Expected a body of known length")
-       | Fixed length ->
-         (match Int64.(length <= of_int max_body_length) with
-          | false -> return (`Request_entity_too_large, "The body is too large")
+      (* The CV is part of the about page, so both endpoints belong to its author *)
+      (match%bind Database.Post.find_by_slug db ~slug:"about" with
+       | None -> return (`Not_found, "There is no about post")
+       | Some { id; title; slug; author_id; content_ko; special_post; _ } ->
+         (match author_id = user_id with
+          | false -> return (`Forbidden, "The about post belongs to another user")
           | true ->
-            let%bind content = Cohttp_async.Body.to_string body |> Deferred.ok in
-            Log.Global.info_s
-              [%message "API request" ~token:(label : string) (endpoint : Endpoint.t)];
-            (match endpoint with
-             | About ->
-               (match Soup.parse content |> Soup.select_one "body" with
-                | None -> return (`Bad_request, "Expected an HTML document with a <body>")
-                | Some body ->
-                  let body =
-                    Soup.children body
-                    |> Soup.to_list
-                    |> List.map ~f:Soup.to_string
-                    |> String.concat
-                  in
-                  (match%bind Database.Post.find_by_slug db ~slug:"about" with
-                   | None -> return (`Not_found, "There is no about post")
-                   | Some { id; title; slug; author_id; content_ko; special_post; _ } ->
-                     (match author_id = user_id with
-                      | false ->
-                        return (`Forbidden, "The about post belongs to another user")
-                      | true ->
+            (match Cohttp.Request.encoding request with
+             | Chunked | Unknown ->
+               (* A body with an unknown length is rejected to avoid OOM *)
+               return (`Length_required, "Expected a body of known length")
+             | Fixed length ->
+               (match Int64.(length <= of_int max_body_length) with
+                | false -> return (`Request_entity_too_large, "The body is too large")
+                | true ->
+                  let%bind content = Cohttp_async.Body.to_string body |> Deferred.ok in
+                  Log.Global.info_s
+                    [%message
+                      "API request" ~token:(label : string) (endpoint : Endpoint.t)];
+                  (match endpoint with
+                   | About ->
+                     (match Soup.parse content |> Soup.select_one "body" with
+                      | None ->
+                        return (`Bad_request, "Expected an HTML document with a <body>")
+                      | Some body ->
+                        let body =
+                          Soup.children body
+                          |> Soup.to_list
+                          |> List.map ~f:Soup.to_string
+                          |> String.concat
+                        in
                         let%map () =
                           Database.Post.update
                             db
@@ -80,16 +82,16 @@ let respond ~db ~media_dir ~body endpoint request =
                             ~content_ko
                             ~special_post
                         in
-                        `No_content, "")))
-             | Cv ->
-               (match String.is_prefix content ~prefix:"%PDF-" with
-                | false -> return (`Unsupported_media_type, "Expected a PDF")
-                | true ->
-                  let%map () =
-                    Deferred.Or_error.try_with (fun () ->
-                      Writer.save (media_dir ^/ "cv.pdf") ~contents:content)
-                  in
-                  `No_content, ""))))
+                        `No_content, "")
+                   | Cv ->
+                     (match String.is_prefix content ~prefix:"%PDF-" with
+                      | false -> return (`Unsupported_media_type, "Expected a PDF")
+                      | true ->
+                        let%map () =
+                          Deferred.Or_error.try_with (fun () ->
+                            Writer.save (media_dir ^/ "cv.pdf") ~contents:content)
+                        in
+                        `No_content, ""))))))
   in
   match result with
   | Error error ->

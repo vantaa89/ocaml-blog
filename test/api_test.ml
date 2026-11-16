@@ -148,27 +148,17 @@ let%expect_test "/api/about is refused without a <body>, or the user does not ow
 ;;
 
 let%expect_test "a path that is not an endpoint gets the site's 404 page" =
-  let%bind () =
-    with_api_server (fun ~db:_ ~server ~credential ->
-      Deferred.List.iter
-        ~how:`Sequential
-        [ "/api/about/en"; "/api/post/about/en" ]
-        ~f:(fun path ->
-          let%map response, (_ : string) =
-            Server_test_helpers.put ~credential server ~path ~body:cv_document
-          in
-          print_s
-            [%message
-              ""
-                (path : string)
-                ~status:
-                  (Cohttp.Response.status response |> Cohttp.Code.code_of_status : int)]))
+  let print_status server ~credential ~path =
+    let%map response, (_ : string) =
+      Server_test_helpers.put ~credential server ~path ~body:cv_document
+    in
+    print_s [%sexp (Cohttp.Response.status response |> Cohttp.Code.code_of_status : int)]
   in
-  [%expect
-    {|
-    ((path /api/about/en) (status 404))
-    ((path /api/post/about/en) (status 404)) |}];
-  return ()
+  with_api_server (fun ~db:_ ~server ~credential ->
+    let%bind () = print_status server ~credential ~path:"/api/about/en" in
+    [%expect {| 404 |}];
+    let%map () = print_status server ~credential ~path:"/api/post/about/en" in
+    [%expect {| 404 |}])
 ;;
 
 let%expect_test "a PDF becomes /media/cv.pdf, and anything else is refused" =
@@ -188,6 +178,36 @@ let%expect_test "a PDF becomes /media/cv.pdf, and anything else is refused" =
     in
     [%expect {| ((status 200) (www_authenticate ()) (body "%PDF-1.7 the cv")) |}];
     return ())
+;;
+
+let%expect_test "/api/cv is refused when the user does not own about" =
+  let%bind () =
+    with_api_server ~posts:[] (fun ~db:_ ~server ~credential ->
+      let%bind () =
+        Server_test_helpers.put ~credential server ~path:"/api/cv" ~body:"%PDF-1.7"
+        >>| print_response
+      in
+      [%expect {| ((status 404) (www_authenticate ()) (body "There is no about post")) |}];
+      let%map () =
+        Server_test_helpers.get server ~path:"/media/cv.pdf" >>| print_response
+      in
+      [%expect {| ((status 404) (www_authenticate ()) (body "File not found")) |}])
+  in
+  with_api_server
+    ~posts:[ post ~id:1 ~slug:"about" ~author:other_user ]
+    (fun ~db:_ ~server ~credential ->
+       let%bind () =
+         Server_test_helpers.put ~credential server ~path:"/api/cv" ~body:"%PDF-1.7"
+         >>| print_response
+       in
+       [%expect
+         {|
+           ((status 403) (www_authenticate ())
+            (body "The about post belongs to another user")) |}];
+       let%map () =
+         Server_test_helpers.get server ~path:"/media/cv.pdf" >>| print_response
+       in
+       [%expect {| ((status 404) (www_authenticate ()) (body "File not found")) |}])
 ;;
 
 let%expect_test "an overlong body is refused" =
