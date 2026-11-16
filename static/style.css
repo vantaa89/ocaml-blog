@@ -9,8 +9,6 @@
     --content-width: 880px;
 }
 
-/* Element defaults the site was built on, taken from Bootstrap's reboot */
-
 *, *::before, *::after {
     box-sizing: border-box;
 }
@@ -618,51 +616,151 @@ h1#title {
 
 /* about 페이지 */
 
+.about-content{
+    /* Hierarchy is carried by size and four greys, from the name of a place down to
+       the period beside it */
+    --about-ink: #18181B;
+    --about-body: #3F3F46;
+    --about-muted: #71717A;
+    --about-faint: #8C8C95;
+    --about-rule: rgb(128 128 128 / 25%);
+    /* The CV is a flat run of headings, paragraphs and lists. Everything spans both
+       columns except an entry's heading and its p.time, and dense packing drops each
+       p.time into the first free cell of the second column: the one beside its own
+       heading. That column fits "Mar. 2023 - Sep. 2024"; a longer period overhangs to
+       the left instead of narrowing every heading. */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 8.75rem;
+    grid-auto-flow: row dense;
+    column-gap: 12px;
+    align-items: baseline;
+    color: var(--about-body);
+}
+
+.about-content > *{
+    grid-column: 1 / -1;
+}
+
+.about-content > h3:has(+ p.time, + p.role + p.time),
+.about-content > h4:has(+ p.time){
+    grid-column: 1;
+}
+
+.about-content strong{
+    font-weight: 600;
+    color: var(--about-ink);
+}
+
 .about-content h2{
-    font-size: 33px;
+    font-size: 1.75rem;
     text-align: center;
-    margin: 30px 0;
-    font-weight: 500;
-    color: rgb(24 24 27);
+    margin: 8px 0 20px 0;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--about-ink);
 }
 
 .about-content h2 ~ h2{
-    margin-top: 20px;
-    padding-top: 30px;
-    border-top: 1px dashed rgb(128 128 128 / 25%);
+    margin-top: 28px;
+    padding-top: 28px;
+    border-top: 1px dashed var(--about-rule);
 }
 
 .about-content h2 em{  /* section note */
     display: block;
-    margin-top: 8px;
+    margin-top: 6px;
     text-align: right;
-    font-size: 11pt;
+    font-size: 0.8125rem;
     font-weight: normal;
-    color: #555;
+    letter-spacing: 0;
+    color: var(--about-faint);
 }
 
-.about-content h3{
-    font-size: larger;
-    font-weight: normal;  /* only the <strong> part is bold, as in the PDF */
-    margin: 10px 0 0 0;
+.about-content h3{  /* the place follows the <strong> name as plain text */
+    font-size: 0.875rem;
+    font-weight: normal;
+    line-height: 1.4;
+    margin: 24px 0 0 0;
+    color: var(--about-muted);
+}
+
+.about-content h3 strong{
+    font-size: 1.0625rem;
 }
 
 .about-content h4{
-    font-size: large;
+    font-size: 1rem;
     font-weight: normal;
-    margin: 5px 0 0 0;
+    line-height: 1.45;
+    margin: 10px 0 0 0;
+    color: var(--about-body);
+}
+
+.about-content h4 em{
+    color: var(--about-muted);
+}
+
+.about-content h4:has(+ ul){  /* skill labels */
+    font-size: 0.9375rem;
+    margin-top: 16px;
+}
+
+.about-content h2 + h3,
+.about-content h2 + h4{
+    margin-top: 0;
 }
 
 .about-content a{
-    text-decoration: none;
     color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--about-rule);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.about-content p.role{
+    margin: 2px 0 0 0;
+    font-size: 1rem;
+    color: var(--about-body);
+}
+
+.about-content p.time{  /* e.g. Mar. 2021 - Present */
+    grid-column: 2;
+    justify-self: end;
+    margin: 0;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--about-faint);
 }
 
 .about-content ul{
+    margin: 6px 0 0 0;
     padding: 0;
     list-style: none;
-    list-style-position:initial;
-    color: #555;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--about-muted);
+}
+
+.about-content ul p{
+    margin: 0;
+}
+
+.about-content p.time + ul li{  /* what was done there */
+    position: relative;
+    padding-left: 14px;
+}
+
+.about-content p.time + ul li::before{
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 0.72em;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background-color: #C4C4CC;
 }
 
 .about-content h4 + ul{  /* skills, as chips */
@@ -670,50 +768,72 @@ h1#title {
     flex-direction: row;
     flex-wrap: wrap;
     margin-top: 8px;
-    gap: 8px 4px;
+    gap: 6px;
 }
 
 .about-content h4 + ul li{
-    padding: 0px 12px;
-    height: 28px;
-    line-height: 28px;
-    color: #555;
-    background-color: var(--main-gray-color);
-    border-radius: 16px;
+    padding: 3px 12px;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--about-body);
+    background-color: #F1F1F3;
+    border-radius: 999px;
 }
 
-.about-content li {
-    list-style: none;
-    list-style-position:initial;
-}
-.about-content ul p{
-    margin: 0;
-    font-size: medium;
+.about-content h2 + ul li + li{
+    margin-top: 8px;
 }
 
-.about-content ul strong{
-    color: rgb(24 24 27);
+.about-content section[role="doc-bibliography"] ul{
+    margin-top: 0;
+    color: var(--about-body);
 }
 
-.about-content p.time{  /* e.g. Mar. 2021 - Present */
-    margin: 0;
-    font-size: small;
-    font-weight: 100;
-    /*color: #AAA;*/
-}
-
-.about-content p.role{
-    margin: 0;
-    font-style: italic;
-    color: #555;
+.about-content section[role="doc-bibliography"] em{
+    color: var(--about-muted);
 }
 
 .about-content section[role="doc-bibliography"] li{
-    margin-bottom: 8px;
+    position: relative;
+    padding-left: 2rem;
+}
+
+.about-content section[role="doc-bibliography"] li + li{
+    margin-top: 10px;
 }
 
 .about-content section[role="doc-bibliography"] .prefix{
-    margin-right: 6px;
+    position: absolute;
+    left: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--about-faint);
+}
+
+.about-content > p:last-child{  /* Last updated */
+    margin: 32px 0 0 0;
+    font-size: 0.875rem;
+    color: var(--about-faint);
+}
+
+@media (max-width: 640px){
+    .about-content{
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .about-content h2{
+        font-size: 1.5rem;
+    }
+
+    /* Honors keep the year beside them; a full period goes under the role instead */
+    .about-content > h3:has(+ p.role + p.time),
+    .about-content > p.role + p.time{
+        grid-column: 1 / -1;
+    }
+
+    .about-content > p.role + p.time{
+        justify-self: start;
+        margin-top: 2px;
+    }
 }
 
 /* posts 페이지 */
