@@ -1,9 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import url("https://spoqa.github.io/spoqa-han-sans/css/SpoqaHanSans-kr.css");
 @import url("https://fonts.cdnfonts.com/css/fira-mono");
 
 :root {
-    /* --main-theme-color: #3693be; */
     --main-theme-color: #20639B;
     --main-gray-color: #F8F8F8;
     --content-width: 880px;
@@ -618,8 +617,7 @@ h1#title {
 
 .about-content{
     --about-body: #414141;
-    --about-meta: #80808A;
-    --about-rule: rgb(128 128 128 / 25%);
+    --about-secondary: #606068;
     --about-chip: #F1F1F3;
     /* The CV is a flat run of headings, paragraphs and lists. Each p.time follows the
        role or honor it dates, so those two share a row and everything else spans it.
@@ -661,16 +659,14 @@ h1#title {
 }
 
 .about-content h2 ~ h2{
-    margin-top: 28px;
-    padding-top: 28px;
-    border-top: 1px dashed var(--about-rule);
+    margin-top: 48px;
 }
 
 .about-content h2 em{  /* section note */
-    font-size: 1rem;
+    font-size: 0.875rem;
     font-weight: normal;
     letter-spacing: 0;
-    color: var(--about-meta);
+    color: var(--about-secondary);
 }
 
 .about-content h3{
@@ -687,10 +683,9 @@ h1#title {
 .about-content h3 .location,
 .about-content p.time{  /* e.g. Seoul, Korea / Mar. 2021 - Present */
     flex-shrink: 0;
-    font-size: 0.8125rem;
-    font-variant-numeric: tabular-nums;
+    font-size: 0.875rem;
     white-space: nowrap;
-    color: var(--about-meta);
+    color: var(--about-secondary);
 }
 
 .about-content h4{
@@ -734,8 +729,10 @@ h1#title {
     margin: 0;
 }
 
-.about-content p.time + ul li{  /* what was done there */
-    position: relative;
+.about-content p.time + ul{  /* details under a role, styled like the dates */
+    margin-top: 0;
+    font-size: 0.875rem;
+    color: var(--about-secondary);
 }
 
 .about-content h4 + ul{  /* skills, as chips */
@@ -768,7 +765,7 @@ h1#title {
 }
 
 .about-content section[role="doc-bibliography"] li + li{
-    margin-top: 10px;
+    margin-top: 16px;
 }
 
 .about-content section[role="doc-bibliography"] .prefix{
@@ -779,7 +776,7 @@ h1#title {
 
 .about-content > p:last-child{  /* Last updated */
     margin: 32px 0 0 0;
-    color: var(--about-meta);
+    font-weight: 300;
 }
 
 @media (max-width: 640px){
