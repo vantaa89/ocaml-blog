@@ -82,6 +82,11 @@ let respond ~db ~media_dir ~body endpoint request =
                             ~content_ko
                             ~special_post
                         in
+                        Log.Global.info_s
+                          [%message
+                            "Updated the about post"
+                              ~token:(label : string)
+                              ~bytes:(String.length body : int)];
                         `No_content, "")
                    | Cv ->
                      (match String.is_prefix content ~prefix:"%PDF-" with
@@ -91,6 +96,11 @@ let respond ~db ~media_dir ~body endpoint request =
                           Deferred.Or_error.try_with (fun () ->
                             Writer.save (media_dir ^/ "cv.pdf") ~contents:content)
                         in
+                        Log.Global.info_s
+                          [%message
+                            "Updated the CV"
+                              ~token:(label : string)
+                              ~bytes:(String.length content : int)];
                         `No_content, ""))))))
   in
   match result with
