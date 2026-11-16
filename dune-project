@@ -2,8 +2,11 @@
 (name blog)
 (generate_opam_files true)
 
+(maintainers "Seojune Lee <leeseojune89@gmail.com>")
+
 (package
  (name blog)
+ (synopsis "Personal blog at seojune.org")
  (depends
   (ocaml (>= 5.2))
   (core (< v0.17))
