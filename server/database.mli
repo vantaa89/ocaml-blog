@@ -100,6 +100,7 @@ module Image : sig
     -> Database_schema.Image.t Deferred.Or_error.t
 
   val find_by_id : t -> id:int -> Database_schema.Image.t option Deferred.Or_error.t
+  val list : t -> Database_schema.Image.t list Deferred.Or_error.t
 end
 
 module Tag : sig

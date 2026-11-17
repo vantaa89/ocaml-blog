@@ -30,6 +30,7 @@ let command =
     ; "create-tables", create_tables_command
     ; "user", User_command.command
     ; "news", News_command.command
+    ; "image", Image_command.command
     ; "token", Token_command.command
     ]
 ;;

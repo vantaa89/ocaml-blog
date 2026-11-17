@@ -119,6 +119,8 @@ module Op = struct
         { name : Test_tag_name.t
         ; as_author : bool
         }
+    | Create_image of Test_slug.t
+    | List_images
     | Create_news of Test_string.t
     | List_news
     | Delete_news of Ref.t
@@ -164,6 +166,14 @@ module Observed = struct
     type t =
       { id : Ref.t
       ; name : string
+      }
+    [@@deriving equal, sexp_of]
+  end
+
+  module Image = struct
+    type t =
+      { filename : string
+      ; date : Date.t
       }
     [@@deriving equal, sexp_of]
   end
@@ -215,6 +225,7 @@ module Response = struct
     | Tag of Observed.Tag.t option
     | Tags of Observed.Tag.t list
     | Tag_counts of (Observed.Tag.t * int) list
+    | Images of Observed.Image.t list
     | News of Observed.News.t list
     | Publications of Observed.Publication.t list
     | Session of Observed.Session.t option
@@ -419,6 +430,19 @@ let run_op (side : Side.t) (op : Op.t) =
           ()
       in
       Response.Posts (List.map posts ~f:(Side.post_ref side))
+    | Create_image filename ->
+      let%map (_ : Database_schema.Image.t) =
+        Database.Image.create
+          side.db
+          ~filename:(Test_slug.to_string filename)
+          ~date:(Date.of_string "2024-01-01")
+      in
+      Response.Unit
+    | List_images ->
+      let%map images = Database.Image.list side.db in
+      Response.Images
+        (List.map images ~f:(fun image : Observed.Image.t ->
+           { filename = image.filename; date = image.date }))
     | Create_news content ->
       let date = Date.add_days (Date.of_string "2024-01-01") (Queue.length side.news) in
       let%map news = Database.News.create side.db ~content ~date in

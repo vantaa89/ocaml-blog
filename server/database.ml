@@ -450,6 +450,22 @@ module Image = struct
         ~where:"id = $1"
         ~param:(Pgx_async.Value.of_int id)
   ;;
+
+  let list t =
+    match t with
+    | Mock { images; _ } ->
+      List.sort !images ~compare:(fun a b -> Int.compare a.id b.id)
+      |> Deferred.Or_error.return
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let columns = String.concat ~sep:", " Database_schema.Image.columns in
+        let%map rows =
+          Pgx_async.execute
+            connection
+            [%string "SELECT %{columns} FROM %{Database_schema.Image.table} ORDER BY id"]
+        in
+        List.map rows ~f:Database_schema.Image.of_row)
+  ;;
 end
 
 module Tag = struct
