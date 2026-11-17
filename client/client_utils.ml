@@ -133,7 +133,7 @@ let paginator ~route ~page ~num_pages =
     Vdom.Node.create
       "nav"
       [ Vdom.Node.ul
-          ~attrs:[ Vdom.Attr.class_ "paginator justify-content-center" ]
+          ~attrs:[ Vdom.Attr.class_ "paginator" ]
           [ arrow ~target:(page - 1) ~label:"Previous page" "◂"
           ; current
           ; arrow ~target:(page + 1) ~label:"Next page" "▸"

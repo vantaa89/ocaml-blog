@@ -242,7 +242,7 @@ let tag_editor ~tags ~draft ~inject =
            ~key:"input"
            ~attrs:
              [ Vdom.Attr.type_ "text"
-             ; Vdom.Attr.placeholder "Add a tag"
+             ; Vdom.Attr.placeholder "Add tags (separated by commas)"
              ; Vdom.Attr.value_prop draft
              ; Vdom.Attr.on_input (fun _ draft -> inject (Action.Set_tag_draft draft))
              ; Vdom.Attr.on_keydown on_keydown
