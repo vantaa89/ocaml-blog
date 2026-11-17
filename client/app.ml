@@ -3,73 +3,72 @@ open! Import
 open Bonsai.Let_syntax
 
 let navbar ~search_trigger ~menu_open ~set_menu_open =
-  Vdom.Node.create
+  let open Vdom in
+  Node.create
     "nav"
-    ~attrs:[ Vdom.Attr.class_ "navbar" ]
-    [ Vdom.Node.div
-        ~attrs:[ Vdom.Attr.classes [ "custom-container"; "navbar-inner" ] ]
+    ~attrs:[ Attr.class_ "navbar" ]
+    [ Node.div
+        ~attrs:[ Attr.classes [ "custom-container"; "navbar-inner" ] ]
         [ Client_utils.link
-            ~attrs:[ Vdom.Attr.class_ "navbar-brand" ]
+            ~attrs:[ Attr.class_ "navbar-brand" ]
             Home
             (match String.lsplit2 Owner_profile.info.name ~on:' ' with
-             | None -> [ Vdom.Node.create "b" [ Vdom.Node.text Owner_profile.info.name ] ]
+             | None -> [ Node.create "b" [ Node.text Owner_profile.info.name ] ]
              | Some (first, rest) ->
                (* The first word in bold *)
-               [ Vdom.Node.create "b" [ Vdom.Node.text first ]
-               ; Vdom.Node.text [%string " %{rest}"]
-               ])
-        ; Vdom.Node.button
+               [ Node.create "b" [ Node.text first ]; Node.text [%string " %{rest}"] ])
+        ; Node.button
             ~attrs:
-              [ Vdom.Attr.class_ "navbar-toggler"
-              ; Vdom.Attr.type_ "button"
-              ; Vdom.Attr.create "aria-controls" "navbar-menu"
-              ; Vdom.Attr.create "aria-expanded" (Bool.to_string menu_open)
-              ; Vdom.Attr.create "aria-label" "Toggle navigation"
-              ; Vdom.Attr.on_click (fun _ -> set_menu_open (not menu_open))
+              [ Attr.class_ "navbar-toggler"
+              ; Attr.type_ "button"
+              ; Attr.create "aria-controls" "navbar-menu"
+              ; Attr.create "aria-expanded" (Bool.to_string menu_open)
+              ; Attr.create "aria-label" "Toggle navigation"
+              ; Attr.on_click (fun _ -> set_menu_open (not menu_open))
               ]
-            [ Vdom.Node.span ~attrs:[ Vdom.Attr.class_ "navbar-toggler-icon" ] [] ]
-        ; Vdom.Node.div
+            [ Node.span ~attrs:[ Attr.class_ "navbar-toggler-icon" ] [] ]
+        ; Node.div
             ~attrs:
-              [ Vdom.Attr.classes
+              [ Attr.classes
                   ("navbar-menu"
                    ::
                    (match menu_open with
                     | true -> [ "open" ]
                     | false -> []))
-              ; Vdom.Attr.id "navbar-menu"
+              ; Attr.id "navbar-menu"
               ]
-            [ Vdom.Node.ul
-                ~attrs:[ Vdom.Attr.class_ "navbar-nav" ]
-                [ Vdom.Node.li
-                    ~attrs:[ Vdom.Attr.class_ "nav-item" ]
+            [ Node.ul
+                ~attrs:[ Attr.class_ "navbar-nav" ]
+                [ Node.li
+                    ~attrs:[ Attr.class_ "nav-item" ]
                     [ Client_utils.link
-                        ~attrs:[ Vdom.Attr.class_ "nav-link" ]
+                        ~attrs:[ Attr.class_ "nav-link" ]
                         Home
-                        [ Vdom.Node.text "home" ]
+                        [ Node.text "home" ]
                     ]
-                ; Vdom.Node.li
-                    ~attrs:[ Vdom.Attr.class_ "nav-item" ]
+                ; Node.li
+                    ~attrs:[ Attr.class_ "nav-item" ]
                     [ Client_utils.link
-                        ~attrs:[ Vdom.Attr.class_ "nav-link" ]
+                        ~attrs:[ Attr.class_ "nav-link" ]
                         (Posts { tag = None; page = 1 })
-                        [ Vdom.Node.text "posts" ]
+                        [ Node.text "posts" ]
                     ]
-                ; Vdom.Node.li
-                    ~attrs:[ Vdom.Attr.class_ "nav-item" ]
+                ; Node.li
+                    ~attrs:[ Attr.class_ "nav-item" ]
                     [ Client_utils.link
-                        ~attrs:[ Vdom.Attr.class_ "nav-link" ]
+                        ~attrs:[ Attr.class_ "nav-link" ]
                         About
-                        [ Vdom.Node.text "about" ]
+                        [ Node.text "about" ]
                     ]
                 ]
-            ; Vdom.Node.span
-                ~attrs:[ Vdom.Attr.classes [ "nav-item"; "navbar-search" ] ]
-                [ Vdom.Node.ul
-                    ~attrs:[ Vdom.Attr.class_ "navbar-nav" ]
-                    [ Vdom.Node.li
+            ; Node.span
+                ~attrs:[ Attr.classes [ "nav-item"; "navbar-search" ] ]
+                [ Node.ul
+                    ~attrs:[ Attr.class_ "navbar-nav" ]
+                    [ Node.li
                         ~attrs:
-                          [ Vdom.Attr.class_ "nav-item"
-                          ; Vdom.Attr.style
+                          [ Attr.class_ "nav-item"
+                          ; Attr.style
                               Css_gen.(
                                 Css_gen.create ~field:"display" ~value:"flex"
                                 @> Css_gen.create ~field:"align-items" ~value:"center")
@@ -83,27 +82,24 @@ let navbar ~search_trigger ~menu_open ~set_menu_open =
 ;;
 
 let footer ~year ~(current_user : Rpcs.Get_current_user.Response.t) ~log_out =
+  let open Vdom in
   let session_node =
     match current_user with
     | Not_logged_in ->
-      Client_utils.link
-        ~attrs:[ Vdom.Attr.class_ "nav-link" ]
-        Login
-        [ Vdom.Node.text "login" ]
+      Client_utils.link ~attrs:[ Attr.class_ "nav-link" ] Login [ Node.text "login" ]
     | Logged_in { username } ->
-      Vdom.Node.button
+      Node.button
         ~attrs:
-          [ Vdom.Attr.class_ "logout-button"
-          ; Vdom.Attr.style (Css_gen.create ~field:"display" ~value:"block")
-          ; Vdom.Attr.on_click (fun _ -> log_out)
+          [ Attr.class_ "logout-button"
+          ; Attr.style (Css_gen.create ~field:"display" ~value:"block")
+          ; Attr.on_click (fun _ -> log_out)
           ]
-        [ Vdom.Node.text [%string "%{username} (logout)"] ]
+        [ Node.text [%string "%{username} (logout)"] ]
   in
-  Vdom.Node.create
+  Node.create
     "nav"
-    ~attrs:[ Vdom.Attr.class_ "footer" ]
-    [ Vdom.Node.p
-        [ Vdom.Node.text [%string "© 2024–%{year#Int} %{Owner_profile.info.name}"] ]
+    ~attrs:[ Attr.class_ "footer" ]
+    [ Node.p [ Node.text [%string "© 2024–%{year#Int} %{Owner_profile.info.name}"] ]
     ; session_node
     ]
 ;;

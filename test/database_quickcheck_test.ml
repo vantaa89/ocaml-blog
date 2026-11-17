@@ -347,8 +347,9 @@ let run_op (side : Side.t) (op : Op.t) =
     | None -> return (Ok Response.Skipped)
     | Some post_id -> f post_id
   in
-  let%map result =
+  let%map response =
     let open Deferred.Or_error.Let_syntax in
+    let open Response in
     match op with
     | Create_post { slug; content_en; content_ko; special_post } ->
       let slug = Test_slug.to_string slug in
@@ -366,20 +367,20 @@ let run_op (side : Side.t) (op : Op.t) =
             (Time_ns.add side.now (Time_ns.Span.of_int_sec (Queue.length side.posts)))
       in
       Queue.enqueue side.posts post.id;
-      Response.Post (Some (Side.post_ref side post))
+      Post (Some (Side.post_ref side post))
     | Find_post_by_slug slug ->
       let%map post =
         Database.Post.find_by_slug side.db ~slug:(Test_slug.to_string slug)
       in
-      Response.Post (Option.map post ~f:(Side.post_ref side))
+      Post (Option.map post ~f:(Side.post_ref side))
     | Find_post_by_id index ->
       with_post_id index ~f:(fun id ->
         let%map post = Database.Post.find_by_id side.db ~id in
-        Response.Post (Option.map post ~f:(Side.post_ref side)))
+        Post (Option.map post ~f:(Side.post_ref side)))
     | Set_hidden { post; hidden } ->
       with_post_id post ~f:(fun id ->
         let%map () = Database.Post.set_hidden side.db ~id ~hidden in
-        Response.Unit)
+        Unit)
     | Update_post { post; slug; content_en; content_ko; special_post } ->
       with_post_id post ~f:(fun id ->
         let slug = Test_slug.to_string slug in
@@ -393,15 +394,15 @@ let run_op (side : Side.t) (op : Op.t) =
             ~content_ko
             ~special_post
         in
-        Response.Unit)
+        Unit)
     | List_posts { as_author } ->
       let%map posts =
         Database.Post.list side.db ~viewer:(Side.viewer side ~as_author) ()
       in
-      Response.Posts (List.map posts ~f:(Side.post_ref side))
+      Posts (List.map posts ~f:(Side.post_ref side))
     | Search_posts query ->
       let%map posts = Database.Post.search side.db ~query () in
-      Response.Posts (List.map posts ~f:(Side.post_ref side))
+      Posts (List.map posts ~f:(Side.post_ref side))
     | Find_or_create_tag name ->
       let%map tag =
         Database.Tag.find_or_create side.db ~name:(Test_tag_name.to_string name)
@@ -410,25 +411,24 @@ let run_op (side : Side.t) (op : Op.t) =
       (match Queue.mem side.tags tag.id ~equal:Ids.Tag_id.equal with
        | true -> ()
        | false -> Queue.enqueue side.tags tag.id);
-      Response.Tag (Some (Side.tag_ref side tag))
+      Tag (Some (Side.tag_ref side tag))
     | Find_tag_by_name name ->
       let%map tag =
         Database.Tag.find_by_name side.db ~name:(Test_tag_name.to_string name)
       in
-      Response.Tag (Option.map tag ~f:(Side.tag_ref side))
+      Tag (Option.map tag ~f:(Side.tag_ref side))
     | Set_tags { post; tags } ->
       with_post_id post ~f:(fun post_id ->
         let tag_ids = List.filter_map tags ~f:(Side.resolve side.tags) in
         let%map () = Database.Post_tag.set_tags side.db ~post_id ~tag_ids in
-        Response.Unit)
+        Unit)
     | Tags_for_post index ->
       with_post_id index ~f:(fun post_id ->
         let%map tags = Database.Post_tag.tags_for_post side.db ~post_id in
-        Response.Tags (List.map tags ~f:(Side.tag_ref side)))
+        Tags (List.map tags ~f:(Side.tag_ref side)))
     | List_tags_with_post_counts ->
       let%map counts = Database.Tag.list_with_post_counts side.db in
-      Response.Tag_counts
-        (List.map counts ~f:(fun (tag, count) -> Side.tag_ref side tag, count))
+      Tag_counts (List.map counts ~f:(fun (tag, count) -> Side.tag_ref side tag, count))
     | List_posts_by_tag { name; as_author } ->
       let%map posts =
         Database.Post.list
@@ -437,7 +437,7 @@ let run_op (side : Side.t) (op : Op.t) =
           ~viewer:(Side.viewer side ~as_author)
           ()
       in
-      Response.Posts (List.map posts ~f:(Side.post_ref side))
+      Posts (List.map posts ~f:(Side.post_ref side))
     | Create_image filename ->
       let%map (_ : Database_schema.Image.t) =
         Database.Image.create
@@ -445,28 +445,28 @@ let run_op (side : Side.t) (op : Op.t) =
           ~filename:(Test_slug.to_string filename)
           ~date:(Date.of_string "2024-01-01")
       in
-      Response.Unit
+      Unit
     | List_images ->
       let%map images = Database.Image.list side.db in
-      Response.Images
+      Images
         (List.map images ~f:(fun image : Observed.Image.t ->
            { filename = image.filename; date = image.date }))
     | Create_news content ->
       let date = Date.add_days (Date.of_string "2024-01-01") (Queue.length side.news) in
       let%map news = Database.News.create side.db ~content ~date in
       Queue.enqueue side.news news.id;
-      Response.Unit
+      Unit
     | List_news ->
       let%map news = Database.News.list side.db in
-      Response.News
+      News
         (List.map news ~f:(fun (news : Database_schema.News.t) : Observed.News.t ->
            { content = news.content; date = news.date }))
     | Delete_news index ->
       (match Side.resolve side.news index with
-       | None -> return Response.Skipped
+       | None -> return Skipped
        | Some id ->
          let%map () = Database.News.delete side.db ~id in
-         Response.Unit)
+         Unit)
     | Create_publication { authors; journal; link } ->
       let%map publication =
         Database.Publication.create
@@ -478,10 +478,10 @@ let run_op (side : Side.t) (op : Op.t) =
           ~link
       in
       Queue.enqueue side.publications publication.id;
-      Response.Unit
+      Unit
     | List_publications { include_hidden } ->
       let%map publications = Database.Publication.list side.db ~include_hidden () in
-      Response.Publications
+      Publications
         (List.map
            publications
            ~f:
@@ -495,16 +495,16 @@ let run_op (side : Side.t) (op : Op.t) =
              }))
     | Set_publication_hidden { publication; hidden } ->
       (match Side.resolve side.publications publication with
-       | None -> return Response.Skipped
+       | None -> return Skipped
        | Some id ->
          let%map () = Database.Publication.set_hidden side.db ~id ~hidden in
-         Response.Unit)
+         Unit)
     | Delete_publication index ->
       (match Side.resolve side.publications index with
-       | None -> return Response.Skipped
+       | None -> return Skipped
        | Some id ->
          let%map () = Database.Publication.delete side.db ~id in
-         Response.Unit)
+         Unit)
     | Create_session { token; expiry } ->
       let%map session =
         Database.Session.create
@@ -513,20 +513,20 @@ let run_op (side : Side.t) (op : Op.t) =
           ~user_id:side.author_id
           ~expires_at:(Test_expiry.to_time_ns expiry ~now:side.now)
       in
-      Response.Session (Some (Side.session_ref side session))
+      Session (Some (Side.session_ref side session))
     | Find_session token ->
       let%map session =
         Database.Session.find_by_token_hash side.db ~token_hash:(Test_token.to_hash token)
       in
-      Response.Session (Option.map session ~f:(Side.session_ref side))
+      Session (Option.map session ~f:(Side.session_ref side))
     | Delete_session token ->
       let%map () =
         Database.Session.delete side.db ~token_hash:(Test_token.to_hash token)
       in
-      Response.Unit
+      Unit
     | Delete_expired_sessions ->
       let%map () = Database.Session.delete_expired side.db ~now:side.now in
-      Response.Unit
+      Unit
     | Create_api_token { label; token } ->
       let%map api_token =
         Database.Api_token.create
@@ -536,24 +536,24 @@ let run_op (side : Side.t) (op : Op.t) =
           ~user_id:side.author_id
           ~created_at:side.now
       in
-      Response.Api_token (Some (Side.api_token_ref side api_token))
+      Api_token (Some (Side.api_token_ref side api_token))
     | Find_api_token token ->
       let%map api_token =
         Database.Api_token.find_by_token_hash
           side.db
           ~token_hash:(Test_token.to_hash token)
       in
-      Response.Api_token (Option.map api_token ~f:(Side.api_token_ref side))
+      Api_token (Option.map api_token ~f:(Side.api_token_ref side))
     | List_api_tokens ->
       let%map api_tokens = Database.Api_token.list side.db in
-      Response.Api_tokens (List.map (Map.data api_tokens) ~f:(Side.api_token_ref side))
+      Api_tokens (List.map (Map.data api_tokens) ~f:(Side.api_token_ref side))
     | Delete_api_token label ->
       let%map () = Database.Api_token.delete side.db ~label:(Test_slug.to_string label) in
-      Response.Unit
+      Unit
   in
-  match result with
+  match response with
   | Ok response -> response
-  | Error _ -> Response.Failed
+  | Error _ -> Failed
 ;;
 
 let run_program ~real ~mock ops =
