@@ -29,4 +29,3 @@ val to_url : t -> string * string list String.Map.t
 
 val to_string : t -> string
 val with_page : t -> int -> t
-val title : t -> string

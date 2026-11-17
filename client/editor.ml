@@ -503,41 +503,51 @@ let for_author page =
 ;;
 
 let new_post =
-  for_author (editor ~mode:(Value.return Mode.New) ~initial:(Value.return empty_form))
+  let%sub view =
+    for_author (editor ~mode:(Value.return Mode.New) ~initial:(Value.return empty_form))
+  in
+  let%arr view = view in
+  ({ view; title = Some "New post" } : Page.t)
 ;;
 
 let edit_post ~slug =
-  for_author
-    (let%sub poll =
-       let%sub query =
-         let%arr slug = slug in
-         { Rpcs.Get_post.Query.slug }
+  let%sub view =
+    for_author
+      (let%sub poll =
+         let%sub query =
+           let%arr slug = slug in
+           { Rpcs.Get_post.Query.slug }
+         in
+         Rpc_effect.Rpc.poll_until_ok
+           (module Rpcs.Get_post.Query)
+           (module Rpcs.Get_post.Response)
+           Rpcs.Get_post.rpc
+           ~where_to_connect:Rpc_client.where_to_connect
+           ~retry_interval:Rpc_client.retry_interval
+           query
        in
-       Rpc_effect.Rpc.poll_until_ok
-         (module Rpcs.Get_post.Query)
-         (module Rpcs.Get_post.Response)
-         Rpcs.Get_post.rpc
-         ~where_to_connect:Rpc_client.where_to_connect
-         ~retry_interval:Rpc_client.retry_interval
-         query
-     in
-     let%sub post =
-       let%arr poll = poll in
-       Option.map poll.last_ok_response ~f:snd
-     in
-     match%sub post with
-     | None ->
-       let%arr poll = poll in
-       Client_utils.of_poll poll ~f:(fun (_ : Rpcs.Get_post.Response.t) -> Vdom.Node.none)
-     | Some None -> Bonsai.const Client_utils.not_found_node
-     | Some (Some post) ->
-       let%sub mode =
-         let%arr slug = slug in
-         Mode.Edit { slug }
+       let%sub post =
+         let%arr poll = poll in
+         Option.map poll.last_ok_response ~f:snd
        in
-       let%sub initial =
-         let%arr post = post in
-         form_of_post post
-       in
-       Bonsai.scope_model (module String) ~on:slug (editor ~mode ~initial))
+       match%sub post with
+       | None ->
+         let%arr poll = poll in
+         Client_utils.of_poll poll ~f:(fun (_ : Rpcs.Get_post.Response.t) ->
+           Vdom.Node.none)
+       | Some None -> Bonsai.const Client_utils.not_found_node
+       | Some (Some post) ->
+         let%sub mode =
+           let%arr slug = slug in
+           Mode.Edit { slug }
+         in
+         let%sub initial =
+           let%arr post = post in
+           form_of_post post
+         in
+         Bonsai.scope_model (module String) ~on:slug (editor ~mode ~initial))
+  in
+  let%arr view = view
+  and slug = slug in
+  ({ view; title = Some [%string "Edit: %{slug}"] } : Page.t)
 ;;

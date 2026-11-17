@@ -93,16 +93,3 @@ let with_page t page =
   | Search { query; page = _ } -> Search { query; page }
   | (Home | About | Post _ | New_post | Edit_post _ | Login | Not_found _) as t -> t
 ;;
-
-let title = function
-  | Home -> Owner_profile.info.name
-  | Posts { tag = None; _ } -> "Posts"
-  | Posts { tag = Some tag; _ } -> [%string "tag: %{tag}"]
-  | Post { slug } -> slug
-  | New_post -> "new post"
-  | Edit_post { slug } -> [%string "edit: %{slug}"]
-  | About -> "about"
-  | Search { query; _ } -> [%string "search: %{query}"]
-  | Login -> "login"
-  | Not_found _ -> "not found"
-;;

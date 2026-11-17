@@ -61,35 +61,39 @@ let component =
       inject (Failed "Too many login attempts. Please try again later.")
     | `Failed (_ : Error.t) -> inject (Failed "Could not log in. Please try again.")
   in
-  Vdom.Node.div
-    ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page"; "login" ] ]
-    [ Vdom.Node.h1 [ Vdom.Node.text "Log in" ]
-    ; Vdom.Node.create
-        "form"
-        ~attrs:
-          [ Vdom.Attr.on_submit (fun _ -> Effect.Many [ Effect.Prevent_default; submit ])
+  let view =
+    Vdom.Node.div
+      ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page"; "login" ] ]
+      [ Vdom.Node.h1 [ Vdom.Node.text "Log in" ]
+      ; Vdom.Node.create
+          "form"
+          ~attrs:
+            [ Vdom.Attr.on_submit (fun _ ->
+                Effect.Many [ Effect.Prevent_default; submit ])
+            ]
+          [ field
+              ~id:"username"
+              ~label:"Username"
+              ~type_:"text"
+              ~value:model.username
+              ~on_input:(fun username -> inject (Set_username username))
+          ; field
+              ~id:"password"
+              ~label:"Password"
+              ~type_:"password"
+              ~value:model.password
+              ~on_input:(fun password -> inject (Set_password password))
+          ; (match model.error with
+             | None -> Vdom.Node.none
+             | Some error ->
+               Vdom.Node.div
+                 ~attrs:[ Vdom.Attr.class_ "login-error" ]
+                 [ Vdom.Node.text error ])
+          ; Vdom.Node.button
+              ~attrs:[ Vdom.Attr.type_ "submit"; Vdom.Attr.class_ "login-submit" ]
+              [ Vdom.Node.text "Log in" ]
           ]
-        [ field
-            ~id:"username"
-            ~label:"Username"
-            ~type_:"text"
-            ~value:model.username
-            ~on_input:(fun username -> inject (Set_username username))
-        ; field
-            ~id:"password"
-            ~label:"Password"
-            ~type_:"password"
-            ~value:model.password
-            ~on_input:(fun password -> inject (Set_password password))
-        ; (match model.error with
-           | None -> Vdom.Node.none
-           | Some error ->
-             Vdom.Node.div
-               ~attrs:[ Vdom.Attr.class_ "login-error" ]
-               [ Vdom.Node.text error ])
-        ; Vdom.Node.button
-            ~attrs:[ Vdom.Attr.type_ "submit"; Vdom.Attr.class_ "login-submit" ]
-            [ Vdom.Node.text "Log in" ]
-        ]
-    ]
+      ]
+  in
+  ({ title = Some "Log in"; view } : Page.t)
 ;;

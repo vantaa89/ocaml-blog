@@ -115,12 +115,6 @@ let set_title =
 
 let component =
   let%sub search_trigger, search_modal = Search_modal.component in
-  let%sub () =
-    Bonsai.Edge.on_change
-      (module Route)
-      Navigation.current
-      ~callback:(Value.return (fun route -> set_title (Route.title route)))
-  in
   let%sub page =
     match%sub Navigation.current with
     | Home -> Pages.home
@@ -131,12 +125,21 @@ let component =
     | Posts { tag; page } -> Pages.posts ~tag ~page
     | Search { query; page } -> Pages.search ~query ~page
     | Login -> Login_page.component
-    | Not_found _ -> Bonsai.const Client_utils.not_found_node
+    | Not_found _ -> Pages.not_found
+  in
+  let%sub title =
+    let%arr page = page in
+    match page.title with
+    | None -> Owner_profile.info.name
+    | Some title -> [%string "%{title} | %{Owner_profile.info.name}"]
+  in
+  let%sub () =
+    Bonsai.Edge.on_change (module String) title ~callback:(Value.return set_title)
   in
   let%sub now = Bonsai.Clock.approx_now ~tick_every:(Time_ns.Span.of_hr 1.) in
   let%sub current_user = Session.current_user in
   let%sub menu_open, set_menu_open = Bonsai.state (module Bool) ~default_model:false in
-  let%arr page = page
+  let%arr { view; _ } = page
   and search_trigger = search_trigger
   and menu_open = menu_open
   and set_menu_open = set_menu_open
@@ -151,7 +154,7 @@ let component =
   in
   Vdom.Node.div
     [ navbar ~search_trigger ~menu_open ~set_menu_open
-    ; page
+    ; view
     ; footer ~year ~current_user ~log_out
     ; search_modal
     ]

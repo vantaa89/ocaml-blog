@@ -149,58 +149,63 @@ let home =
   and intro_html = intro_html
   and news_expanded = news_expanded
   and set_news_expanded = set_news_expanded in
-  Client_utils.of_poll poll ~f:(fun (response : Rpcs.Get_main_page.Response.t) ->
-    let toggle_button =
-      match List.length response.news > news_preview_count with
-      | false -> Vdom.Node.none
-      | true ->
-        Vdom.Node.button
-          ~attrs:
-            [ Vdom.Attr.id "toggle-news-btn"
-            ; Vdom.Attr.class_ "news-toggle-btn"
-            ; Vdom.Attr.type_ "button"
-            ; Vdom.Attr.create "aria-expanded" (Bool.to_string news_expanded)
-            ; Vdom.Attr.on_click (fun _ -> set_news_expanded (not news_expanded))
-            ]
-          [ Vdom.Node.text
-              (match news_expanded with
-               | true -> "Show less ↑"
-               | false -> "Show more ↓")
-          ]
-    in
-    Vdom.Node.div
-      ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page" ]; Vdom.Attr.id "main" ]
-      [ profile_node
-      ; html_node ~tag:"div" ~attrs:[ Vdom.Attr.id "main-intro" ] ~html:intro_html
-      ; Vdom.Node.hr ()
-      ; Vdom.Node.h3 [ Vdom.Node.text "Publications" ]
-      ; Vdom.Node.div
-          ~attrs:[ Vdom.Attr.id "main-publications" ]
-          (List.map response.publications ~f:publication_node)
-      ; Vdom.Node.hr ()
-      ; Vdom.Node.h3 [ Vdom.Node.text "Recent Posts" ]
-      ; Vdom.Node.div
-          ~attrs:[ Vdom.Attr.id "main-recent-posts" ]
-          (List.map response.recent_posts ~f:Client_utils.post_card)
-      ; Client_utils.link
-          ~attrs:[ Vdom.Attr.id "more-posts-link" ]
-          (Posts { tag = None; page = 1 })
-          [ Vdom.Node.text "More Posts →" ]
-      ; Vdom.Node.hr ()
-      ; Vdom.Node.h3 [ Vdom.Node.text "Updates " ]
-      ; Vdom.Node.div
-          ~attrs:
-            [ Vdom.Attr.id "main-news"
-            ; Vdom.Attr.classes
-                [ "news-collapsible"
-                ; (match news_expanded with
-                   | true -> "expanded"
-                   | false -> "collapsed")
-                ]
-            ]
-          (List.mapi response.news ~f:news_node)
-      ; toggle_button
-      ])
+  ({ title = None
+   ; view =
+       Client_utils.of_poll poll ~f:(fun (response : Rpcs.Get_main_page.Response.t) ->
+         let toggle_button =
+           match List.length response.news > news_preview_count with
+           | false -> Vdom.Node.none
+           | true ->
+             Vdom.Node.button
+               ~attrs:
+                 [ Vdom.Attr.id "toggle-news-btn"
+                 ; Vdom.Attr.class_ "news-toggle-btn"
+                 ; Vdom.Attr.type_ "button"
+                 ; Vdom.Attr.create "aria-expanded" (Bool.to_string news_expanded)
+                 ; Vdom.Attr.on_click (fun _ -> set_news_expanded (not news_expanded))
+                 ]
+               [ Vdom.Node.text
+                   (match news_expanded with
+                    | true -> "Show less ↑"
+                    | false -> "Show more ↓")
+               ]
+         in
+         Vdom.Node.div
+           ~attrs:
+             [ Vdom.Attr.classes [ "custom-container"; "page" ]; Vdom.Attr.id "main" ]
+           [ profile_node
+           ; html_node ~tag:"div" ~attrs:[ Vdom.Attr.id "main-intro" ] ~html:intro_html
+           ; Vdom.Node.hr ()
+           ; Vdom.Node.h3 [ Vdom.Node.text "Publications" ]
+           ; Vdom.Node.div
+               ~attrs:[ Vdom.Attr.id "main-publications" ]
+               (List.map response.publications ~f:publication_node)
+           ; Vdom.Node.hr ()
+           ; Vdom.Node.h3 [ Vdom.Node.text "Recent Posts" ]
+           ; Vdom.Node.div
+               ~attrs:[ Vdom.Attr.id "main-recent-posts" ]
+               (List.map response.recent_posts ~f:Client_utils.post_card)
+           ; Client_utils.link
+               ~attrs:[ Vdom.Attr.id "more-posts-link" ]
+               (Posts { tag = None; page = 1 })
+               [ Vdom.Node.text "More Posts →" ]
+           ; Vdom.Node.hr ()
+           ; Vdom.Node.h3 [ Vdom.Node.text "Updates " ]
+           ; Vdom.Node.div
+               ~attrs:
+                 [ Vdom.Attr.id "main-news"
+                 ; Vdom.Attr.classes
+                     [ "news-collapsible"
+                     ; (match news_expanded with
+                        | true -> "expanded"
+                        | false -> "collapsed")
+                     ]
+                 ]
+               (List.mapi response.news ~f:news_node)
+           ; toggle_button
+           ])
+   }
+   : Page.t)
 ;;
 
 (***** post list *****)
@@ -291,50 +296,58 @@ let posts ~tag ~page =
   and tag = tag
   and page = page
   and current_user = current_user in
-  Client_utils.of_poll posts_poll ~f:(fun fetched ->
-    let tags =
-      match tags_poll.last_ok_response with
-      | None -> []
-      | Some ((), tags) -> tags
-    in
-    let posts = List.take fetched Client_utils.page_size in
-    let num_pages =
-      match List.length fetched > Client_utils.page_size with
-      | true -> page + 1
-      | false -> page
-    in
-    let heading, match_count =
-      match tag with
-      | None -> "posts", None
-      | Some tag ->
-        let count =
-          List.find_map tags ~f:(fun (candidate, post_count) ->
-            Option.some_if (String.Caseless.equal candidate tag) post_count)
-        in
-        [%string "tag: %{tag}"], count
-    in
-    let author_actions =
-      match current_user with
-      | Not_logged_in -> Vdom.Node.none
-      | Logged_in _ ->
-        Vdom.Node.div
-          ~attrs:[ Vdom.Attr.class_ "author-actions" ]
-          [ Client_utils.link
-              ~attrs:[ Vdom.Attr.class_ "new-post-button" ]
-              New_post
-              [ Vdom.Node.text "New post" ]
-          ]
-    in
-    post_list_node
-      ~author_actions
-      ~heading
-      ~match_count
-      ~posts
-      ~tags
-      ~route:(Route.Posts { tag; page })
-      ~page
-      ~num_pages
-      ())
+  let title =
+    match tag with
+    | None -> Some "Posts"
+    | Some tag -> Some [%string "Posts tagged %{tag}"]
+  in
+  let view =
+    Client_utils.of_poll posts_poll ~f:(fun fetched ->
+      let tags =
+        match tags_poll.last_ok_response with
+        | None -> []
+        | Some ((), tags) -> tags
+      in
+      let posts = List.take fetched Client_utils.page_size in
+      let num_pages =
+        match List.length fetched > Client_utils.page_size with
+        | true -> page + 1
+        | false -> page
+      in
+      let heading, match_count =
+        match tag with
+        | None -> "posts", None
+        | Some tag ->
+          let count =
+            List.find_map tags ~f:(fun (candidate, post_count) ->
+              Option.some_if (String.Caseless.equal candidate tag) post_count)
+          in
+          [%string "tag: %{tag}"], count
+      in
+      let author_actions =
+        match current_user with
+        | Not_logged_in -> Vdom.Node.none
+        | Logged_in _ ->
+          Vdom.Node.div
+            ~attrs:[ Vdom.Attr.class_ "author-actions" ]
+            [ Client_utils.link
+                ~attrs:[ Vdom.Attr.class_ "new-post-button" ]
+                New_post
+                [ Vdom.Node.text "New post" ]
+            ]
+      in
+      post_list_node
+        ~author_actions
+        ~heading
+        ~match_count
+        ~posts
+        ~tags
+        ~route:(Route.Posts { tag; page })
+        ~page
+        ~num_pages
+        ())
+  in
+  ({ title; view } : Page.t)
 ;;
 
 let search ~query ~page =
@@ -364,25 +377,29 @@ let search ~query ~page =
   and tags_poll = tags_poll
   and query = query
   and page = page in
-  Client_utils.of_poll posts_poll ~f:(fun matches ->
-    let tags =
-      match tags_poll.last_ok_response with
-      | None -> []
-      | Some ((), tags) -> tags
-    in
-    let count = List.length matches in
-    let num_pages =
-      Int.max 1 ((count + Client_utils.page_size - 1) / Client_utils.page_size)
-    in
-    post_list_node
-      ~heading:[%string "search: %{query}"]
-      ~match_count:(Some count)
-      ~posts:(Client_utils.paginate matches ~page)
-      ~tags
-      ~route:(Route.Search { query; page })
-      ~page
-      ~num_pages
-      ())
+  ({ title = Some [%string "Search: %{query}"]
+   ; view =
+       Client_utils.of_poll posts_poll ~f:(fun matches ->
+         let tags =
+           match tags_poll.last_ok_response with
+           | None -> []
+           | Some ((), tags) -> tags
+         in
+         let count = List.length matches in
+         let num_pages =
+           Int.max 1 ((count + Client_utils.page_size - 1) / Client_utils.page_size)
+         in
+         post_list_node
+           ~heading:[%string "search: %{query}"]
+           ~match_count:(Some count)
+           ~posts:(Client_utils.paginate matches ~page)
+           ~tags
+           ~route:(Route.Search { query; page })
+           ~page
+           ~num_pages
+           ())
+   }
+   : Page.t)
 ;;
 
 (***** post detail *****)
@@ -402,23 +419,23 @@ let post_detail ~slug =
       query
   in
   let%sub language, set_language =
-    Bonsai.state (module Language) ~default_model:Language.English
+    Bonsai.state (module Language) ~default_model:English
   in
-  let%sub html =
+  let%sub html, title =
     let%arr poll = poll
     and language = language in
     match poll.last_ok_response with
-    | None -> ""
-    | Some (_query, None) -> ""
-    | Some (_query, Some (post : Rpcs.Post.t)) ->
-      let markdown =
-        match Map.find post.content language with
-        | Some markdown -> Some markdown
-        | None -> Client_utils.primary_content post.content
+    | None -> "", None
+    | Some (_query, None) -> "", Some "Not found"
+    | Some (_query, Some post) ->
+      let html =
+        Option.first_some
+          (Map.find post.content language)
+          (Client_utils.primary_content post.content)
+        |> Option.value_map ~default:"" ~f:(fun markdown ->
+          Markdown_renderer.render ~markdown)
       in
-      (match markdown with
-       | None -> ""
-       | Some markdown -> Markdown_renderer.render ~markdown)
+      html, Some post.title
   in
   let%sub () = Client_utils.rerender_on_change html in
   let%sub current_user = Session.current_user in
@@ -433,113 +450,126 @@ let post_detail ~slug =
   and set_language = set_language
   and current_user = current_user
   and set_post_hidden = set_post_hidden
-  and slug = slug in
-  Client_utils.of_poll poll ~f:(fun post ->
-    match post with
-    | None -> Client_utils.not_found_node
-    | Some
-        ({ title; slug = _; content; created_at; tags; special_post = _; hidden } :
-          Rpcs.Post.t) ->
-      let read_time =
-        Client_utils.primary_content content |> Option.map ~f:Client_utils.read_time
-      in
-      let languages = Map.keys content in
-      let post_time_node =
-        let languages =
-          List.map languages ~f:Language.to_code |> String.concat ~sep:"/"
-        in
-        let parts =
-          List.filter_opt
-            [ Some (Client_utils.format_time created_at)
-            ; read_time
-            ; Some [%string "🌐︎ %{languages}"]
-            ]
-        in
-        let author_action =
-          match current_user with
-          | Not_logged_in -> []
-          | Logged_in _ ->
-            [ Vdom.Node.text " · "
-            ; Vdom.Node.button
-                ~attrs:
-                  [ Vdom.Attr.class_ "author-action"
-                  ; Vdom.Attr.type_ "button"
-                  ; Vdom.Attr.on_click (fun _ ->
-                      let%bind.Effect (_ : unit Or_error.t) =
-                        set_post_hidden { slug; hidden = not hidden }
-                      in
-                      poll.refresh)
-                  ]
-                [ Vdom.Node.text
-                    (match hidden with
-                     | true -> "unhide"
-                     | false -> "hide")
-                ]
-            ; Vdom.Node.text " · "
-            ; Client_utils.link
-                ~attrs:[ Vdom.Attr.class_ "author-action" ]
-                (Edit_post { slug })
-                [ Vdom.Node.text "edit" ]
-            ]
-        in
-        Vdom.Node.p
-          ~attrs:[ Vdom.Attr.class_ "post-time" ]
-          (Vdom.Node.text (String.concat parts ~sep:" · ") :: author_action)
-      in
-      let language_toggle =
-        match List.length languages > 1 with
-        | false -> Vdom.Node.none
-        | true ->
-          let button (target : Language.t) label =
-            Vdom.Node.button
-              ~attrs:
-                [ Vdom.Attr.type_ "button"
-                ; Vdom.Attr.id [%string "lang-%{Language.to_code target}-btn"]
-                ; Vdom.Attr.classes
-                    ("language-btn"
-                     ::
-                     (match Language.equal target language with
-                      | true -> [ "active" ]
-                      | false -> []))
-                ; Vdom.Attr.on_click (fun _ -> set_language target)
-                ]
-              [ Vdom.Node.text label ]
-          in
-          Vdom.Node.div
-            ~attrs:[ Vdom.Attr.class_ "language-toggle-container" ]
-            [ Vdom.Node.div
-                ~attrs:
-                  [ Vdom.Attr.class_ "language-toggle"; Vdom.Attr.id "language-toggle" ]
-                [ button English "EN"; button Korean "한" ]
-            ]
-      in
-      Vdom.Node.div
-        ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page"; "post-detail" ] ]
-        [ Vdom.Node.div
-            ~attrs:[ Vdom.Attr.class_ "post-detail-header" ]
-            [ Vdom.Node.div
-                ~attrs:
-                  [ Vdom.Attr.style
-                      Css_gen.(
-                        Css_gen.create ~field:"display" ~value:"flex"
-                        @> Css_gen.create ~field:"flex-direction" ~value:"row")
-                  ]
-                [ Vdom.Node.h1 [ Vdom.Node.text title ] ]
-            ; Vdom.Node.div
-                ~attrs:
-                  [ Vdom.Attr.style
-                      Css_gen.(
-                        Css_gen.create ~field:"display" ~value:"flex"
-                        @> Css_gen.create ~field:"flex-direction" ~value:"row"
-                        @> Css_gen.create ~field:"align-items" ~value:"center"
-                        @> Css_gen.create ~field:"justify-content" ~value:"space-between")
-                  ]
-                [ Vdom.Node.div (post_time_node :: List.map tags ~f:Client_utils.tag_node)
-                ; language_toggle
-                ]
-            ]
-        ; html_node ~tag:"div" ~attrs:[ Vdom.Attr.class_ "post-detail-content" ] ~html
-        ])
+  and slug = slug
+  and title = title in
+  ({ title
+   ; view =
+       Client_utils.of_poll poll ~f:(fun post ->
+         match post with
+         | None -> Client_utils.not_found_node
+         | Some
+             ({ title; slug = _; content; created_at; tags; special_post = _; hidden } :
+               Rpcs.Post.t) ->
+           let read_time =
+             Client_utils.primary_content content |> Option.map ~f:Client_utils.read_time
+           in
+           let languages = Map.keys content in
+           let post_time_node =
+             let languages =
+               List.map languages ~f:Language.to_code |> String.concat ~sep:"/"
+             in
+             let parts =
+               List.filter_opt
+                 [ Some (Client_utils.format_time created_at)
+                 ; read_time
+                 ; Some [%string "🌐︎ %{languages}"]
+                 ]
+             in
+             let author_action =
+               match current_user with
+               | Not_logged_in -> []
+               | Logged_in _ ->
+                 [ Vdom.Node.text " · "
+                 ; Vdom.Node.button
+                     ~attrs:
+                       [ Vdom.Attr.class_ "author-action"
+                       ; Vdom.Attr.type_ "button"
+                       ; Vdom.Attr.on_click (fun _ ->
+                           let%bind.Effect (_ : unit Or_error.t) =
+                             set_post_hidden { slug; hidden = not hidden }
+                           in
+                           poll.refresh)
+                       ]
+                     [ Vdom.Node.text
+                         (match hidden with
+                          | true -> "unhide"
+                          | false -> "hide")
+                     ]
+                 ; Vdom.Node.text " · "
+                 ; Client_utils.link
+                     ~attrs:[ Vdom.Attr.class_ "author-action" ]
+                     (Edit_post { slug })
+                     [ Vdom.Node.text "edit" ]
+                 ]
+             in
+             Vdom.Node.p
+               ~attrs:[ Vdom.Attr.class_ "post-time" ]
+               (Vdom.Node.text (String.concat parts ~sep:" · ") :: author_action)
+           in
+           let language_toggle =
+             match List.length languages > 1 with
+             | false -> Vdom.Node.none
+             | true ->
+               let button (target : Language.t) label =
+                 Vdom.Node.button
+                   ~attrs:
+                     [ Vdom.Attr.type_ "button"
+                     ; Vdom.Attr.id [%string "lang-%{Language.to_code target}-btn"]
+                     ; Vdom.Attr.classes
+                         ("language-btn"
+                          ::
+                          (match Language.equal target language with
+                           | true -> [ "active" ]
+                           | false -> []))
+                     ; Vdom.Attr.on_click (fun _ -> set_language target)
+                     ]
+                   [ Vdom.Node.text label ]
+               in
+               Vdom.Node.div
+                 ~attrs:[ Vdom.Attr.class_ "language-toggle-container" ]
+                 [ Vdom.Node.div
+                     ~attrs:
+                       [ Vdom.Attr.class_ "language-toggle"
+                       ; Vdom.Attr.id "language-toggle"
+                       ]
+                     [ button English "EN"; button Korean "한" ]
+                 ]
+           in
+           Vdom.Node.div
+             ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page"; "post-detail" ] ]
+             [ Vdom.Node.div
+                 ~attrs:[ Vdom.Attr.class_ "post-detail-header" ]
+                 [ Vdom.Node.div
+                     ~attrs:
+                       [ Vdom.Attr.style
+                           Css_gen.(
+                             Css_gen.create ~field:"display" ~value:"flex"
+                             @> Css_gen.create ~field:"flex-direction" ~value:"row")
+                       ]
+                     [ Vdom.Node.h1 [ Vdom.Node.text title ] ]
+                 ; Vdom.Node.div
+                     ~attrs:
+                       [ Vdom.Attr.style
+                           Css_gen.(
+                             Css_gen.create ~field:"display" ~value:"flex"
+                             @> Css_gen.create ~field:"flex-direction" ~value:"row"
+                             @> Css_gen.create ~field:"align-items" ~value:"center"
+                             @> Css_gen.create
+                                  ~field:"justify-content"
+                                  ~value:"space-between")
+                       ]
+                     [ Vdom.Node.div
+                         (post_time_node :: List.map tags ~f:Client_utils.tag_node)
+                     ; language_toggle
+                     ]
+                 ]
+             ; html_node
+                 ~tag:"div"
+                 ~attrs:[ Vdom.Attr.class_ "post-detail-content" ]
+                 ~html
+             ])
+   }
+   : Page.t)
 ;;
 
 (***** about *****)
@@ -566,17 +596,25 @@ let about =
   let%sub () = Client_utils.rerender_on_change html in
   let%arr poll = poll
   and html = html in
-  Client_utils.of_poll poll ~f:(fun (_ : Rpcs.Post.t option) ->
-    Vdom.Node.div
-      [ Vdom.Node.h1
-          ~attrs:[ Vdom.Attr.style (Css_gen.create ~field:"display" ~value:"none") ]
-          [ Vdom.Node.text "about" ]
-      ; html_node
-          ~tag:"div"
-          ~attrs:
-            [ Vdom.Attr.classes [ "custom-container"; "page"; "about-content" ]
-            ; Vdom.Attr.id "about"
-            ]
-          ~html
-      ])
+  ({ title = Some "About"
+   ; view =
+       Client_utils.of_poll poll ~f:(fun (_ : Rpcs.Post.t option) ->
+         Vdom.Node.div
+           [ Vdom.Node.h1
+               ~attrs:[ Vdom.Attr.style (Css_gen.create ~field:"display" ~value:"none") ]
+               [ Vdom.Node.text "about" ]
+           ; html_node
+               ~tag:"div"
+               ~attrs:
+                 [ Vdom.Attr.classes [ "custom-container"; "page"; "about-content" ]
+                 ; Vdom.Attr.id "about"
+                 ]
+               ~html
+           ])
+   }
+   : Page.t)
+;;
+
+let not_found =
+  Bonsai.const ({ title = Some "Not found"; view = Client_utils.not_found_node } : Page.t)
 ;;
