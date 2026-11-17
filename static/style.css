@@ -920,6 +920,19 @@ h1#title {
     margin-bottom: 20px;
 }
 
+.post-detail-title {
+    display: flex;
+    flex-direction: row;
+}
+
+/* The time, read time, languages and tags on one side, the language toggle on the other */
+.post-detail-meta {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
 .post-time {
     font-size: small;
     color: #AAA;

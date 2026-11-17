@@ -99,9 +99,10 @@ let not_found_node =
     ]
 ;;
 
-let of_poll (poll : (_, 'response) Rpc_effect.Poll_result.t) ~f =
+let of_poll (poll : _ Rpc_effect.Poll_result.t) ~f =
   match poll.last_ok_response with
-  | None -> status_node ~attrs:[ Vdom.Attr.create "role" "status" ] ~heading:"Loading" []
+  | None ->
+    status_node ~attrs:[ Vdom.Attr.create "role" "status" ] ~heading:"Loading..." []
   | Some (_query, response) -> f response
 ;;
 
