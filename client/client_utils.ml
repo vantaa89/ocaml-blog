@@ -76,18 +76,32 @@ let post_card
      @ List.map tags ~f:tag_node)
 ;;
 
+(* A page that stands in for the content: the mark, a heading, and what follows it *)
+let status_node ?(attrs = []) ~heading children =
+  let open Vdom in
+  Node.div
+    ~attrs:(Attr.classes [ "custom-container"; "my-3"; "status-page" ] :: attrs)
+    (Node.div
+       ~attrs:[ Attr.class_ "status-mark"; Hadamard.turn_on_hover ]
+       [ Hadamard.mark ]
+     :: Node.h2 [ Node.text heading ]
+     :: children)
+;;
+
 let not_found_node =
-  Vdom.Node.div
-    ~attrs:[ Vdom.Attr.class_ "custom-container my-3" ]
-    [ Vdom.Node.h1 [ Vdom.Node.text "Not found" ] ]
+  let open Vdom in
+  status_node
+    ~heading:"404 Not found"
+    [ Node.p [ Node.text "The page you're looking for doesn't exist or has moved." ]
+    ; Node.p
+        ~attrs:[ Attr.class_ "status-links" ]
+        [ link ~attrs:[ Attr.class_ "plain-link" ] Home [ Node.text "← Home" ] ]
+    ]
 ;;
 
 let of_poll (poll : (_, 'response) Rpc_effect.Poll_result.t) ~f =
   match poll.last_ok_response with
-  | None ->
-    Vdom.Node.div
-      ~attrs:[ Vdom.Attr.class_ "custom-container my-3" ]
-      [ Vdom.Node.p [ Vdom.Node.text "Loading…" ] ]
+  | None -> status_node ~attrs:[ Vdom.Attr.create "role" "status" ] ~heading:"Loading" []
   | Some (_query, response) -> f response
 ;;
 

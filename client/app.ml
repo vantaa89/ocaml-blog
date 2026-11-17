@@ -149,8 +149,9 @@ let component =
     | Error _ -> Effect.Ignore
   in
   Vdom.Node.div
+    ~attrs:[ Vdom.Attr.class_ "app-frame" ]
     [ navbar ~search_trigger ~menu_open ~set_menu_open
-    ; view
+    ; Vdom.Node.create "main" ~attrs:[ Vdom.Attr.class_ "app-main" ] [ view ]
     ; footer ~year ~current_user ~log_out
     ; search_modal
     ]

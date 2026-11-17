@@ -186,7 +186,7 @@ let home =
                ~attrs:[ Vdom.Attr.id "main-recent-posts" ]
                (List.map response.recent_posts ~f:Client_utils.post_card)
            ; Client_utils.link
-               ~attrs:[ Vdom.Attr.id "more-posts-link" ]
+               ~attrs:[ Vdom.Attr.id "more-posts-link"; Vdom.Attr.class_ "plain-link" ]
                (Posts { tag = None; page = 1 })
                [ Vdom.Node.text "More Posts →" ]
            ; Vdom.Node.hr ()

@@ -270,6 +270,7 @@ let component =
       @ [ Vdom.Node.div
             ~attrs:[ Vdom.Attr.class_ "search-show-all" ]
             [ Client_utils.link
+                ~attrs:[ Vdom.Attr.class_ "plain-link" ]
                 (Search { query = model.debounced; page = 1 })
                 [ Vdom.Node.text "Show all results →" ]
             ]

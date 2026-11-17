@@ -73,6 +73,11 @@ a {
     color: #0D6EFD;
 }
 
+.plain-link {
+    color: var(--main-theme-color);
+    text-decoration: none;
+}
+
 pre, code, kbd, samp {
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
@@ -132,6 +137,19 @@ textarea {
 
 [hidden] {
     display: none !important;
+}
+
+/* The navbar, the page and the footer. The page fills the height a short page leaves, so
+   the footer stays at the bottom of the viewport. */
+.app-frame {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+.app-main {
+    flex: 1;
 }
 
 /* A page's body under the navbar */
@@ -536,8 +554,6 @@ h1#title {
 }
 
 #more-posts-link{
-    color: var(--main-theme-color);
-    text-decoration: none;
     display: block;
     text-align: right;
 }
@@ -1128,8 +1144,6 @@ h1#title {
 }
 
 .search-show-all a {
-    color: var(--main-theme-color);
-    text-decoration: none;
     font-size: 14px;
     font-weight: 500;
 }
@@ -1215,6 +1229,122 @@ mark {
     .search-text-mobile {
         display: none;
     }
+}
+
+/* The site's mark, a Hadamard matrix: +1 is a rounded square in the theme colour, −1 is
+   left empty. Turning it over (−H) snaps each cell to the other state, one after another
+   like flipping bits. Every few seconds it turns over and straight back, from the top
+   left (--blink).
+   Hovering pauses that and holds it at −H, a wave from the pointer (--hover). The cells
+   follow whichever of the two is further along, so hovering mid-blink takes over
+   without a jump. */
+@property --blink{
+    syntax: "<number>";
+    inherits: false;
+    initial-value: 0;
+}
+
+@property --hover{
+    syntax: "<number>";
+    inherits: false;
+    initial-value: 0;
+}
+
+.hadamard{
+    --rows: 4;
+    --cols: 4;
+    --cell: 6px;
+    --step: 22ms;
+    display: inline-grid;
+    grid-template-columns: repeat(var(--cols), 1fr);
+    grid-template-rows: repeat(var(--rows), 1fr);
+    width: calc(var(--cols) * var(--cell));
+    aspect-ratio: 1;
+    flex-shrink: 0;
+}
+
+.hadamard-cell{
+    --distance: hypot(
+        var(--col) + 0.5 - var(--pointer-x, 0) * var(--cols),
+        var(--row) + 0.5 - var(--pointer-y, 0) * var(--rows));
+    border-radius: 28%;
+    background-color: var(--main-theme-color);
+    scale: calc(var(--upright) + (var(--turned) - var(--upright)) * max(var(--blink), var(--hover)));
+    transition: --hover 110ms cubic-bezier(0.2, 0, 0, 1) calc(round(down, var(--distance)) * var(--step));
+    animation: hadamard-blink 3s calc((var(--row) + var(--col)) * var(--step)) infinite;
+}
+
+.hadamard-cell.positive{
+    --upright: 0.82;
+    --turned: 0;
+}
+
+.hadamard-cell.negative{
+    --upright: 0;
+    --turned: 0.82;
+}
+
+[data-turned] .hadamard-cell{
+    --hover: 1;
+    animation-play-state: paused;
+}
+
+@keyframes hadamard-blink{
+    0%, 89.75%{
+        --blink: 0;
+        animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+    }
+    91.5%, 95%{
+        --blink: 1;
+        animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+    }
+    96.75%, 100%{
+        --blink: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce){
+    .hadamard-cell{
+        transition-duration: 200ms;
+        transition-delay: 0s;
+        animation: none;
+    }
+}
+
+/* Status pages: loading and not found */
+
+.status-page{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4rem 0;
+    text-align: center;
+}
+
+.status-mark{
+    display: flex;
+    padding: 1rem;
+}
+
+.status-mark .hadamard{
+    --cell: 21px;
+    --step: 80ms;
+}
+
+.status-page h2{
+    margin-top: 0.25rem;
+}
+
+.status-page p{
+    color: gray;
+}
+
+.status-page .status-links{
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 1.5rem;
+    margin-top: 0.5rem;
 }
 
 /* Login page */
