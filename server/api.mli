@@ -13,7 +13,7 @@ end
 val create_token
   :  db:Database.t
   -> label:string
-  -> user_id:int
+  -> user_id:User_id.t
   -> now:Time_ns.t
   -> Token.t Deferred.Or_error.t
 

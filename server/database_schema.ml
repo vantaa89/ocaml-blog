@@ -29,7 +29,7 @@ end
 
 module User = struct
   type t =
-    { id : int
+    { id : User_id.t
     ; username : string
     ; email : string
     ; password_hash : string
@@ -45,7 +45,7 @@ module User = struct
     let module Value = Pgx_async.Value in
     match row with
     | [ id; username; email; password_hash; date_joined; last_login ] ->
-      { id = Value.to_int_exn id
+      { id = User_id.of_pgx_async_value_exn id
       ; username = Value.to_string_exn username
       ; email = Value.to_string_exn email
       ; password_hash = Value.to_string_exn password_hash
@@ -62,7 +62,7 @@ module User = struct
     let module Value = Pgx_async.Value in
     let value to_value field = to_value (Field.get field t) in
     Fields.to_list
-      ~id:(value Value.of_int)
+      ~id:(value User_id.to_pgx_async_value)
       ~username:(value Value.of_string)
       ~email:(value Value.of_string)
       ~password_hash:(value Value.of_string)
@@ -88,7 +88,7 @@ end
 
 module Image = struct
   type t =
-    { id : int
+    { id : Image_id.t
     ; filename : string
     ; date : Date.t
     }
@@ -102,7 +102,7 @@ module Image = struct
     let module Value = Pgx_async.Value in
     match row with
     | [ id; filename; date ] ->
-      { id = Value.to_int_exn id
+      { id = Image_id.of_pgx_async_value_exn id
       ; filename = Value.to_string_exn filename
       ; date = Value.to_date_exn date
       }
@@ -113,7 +113,7 @@ module Image = struct
     let module Value = Pgx_async.Value in
     let value to_value field = to_value (Field.get field t) in
     Fields.to_list
-      ~id:(value Value.of_int)
+      ~id:(value Image_id.to_pgx_async_value)
       ~filename:(value Value.of_string)
       ~date:(value Value.of_date)
   ;;
@@ -133,7 +133,7 @@ end
 
 module Tag = struct
   type t =
-    { id : int
+    { id : Tag_id.t
     ; name : string
     }
   [@@deriving fields]
@@ -144,14 +144,15 @@ module Tag = struct
   let of_row row : t =
     let module Value = Pgx_async.Value in
     match row with
-    | [ id; name ] -> { id = Value.to_int_exn id; name = Value.to_string_exn name }
+    | [ id; name ] ->
+      { id = Tag_id.of_pgx_async_value_exn id; name = Value.to_string_exn name }
     | _ -> raise_s [%message "Unexpected row shape for Tag" (row : Value.t list)]
   ;;
 
   let to_row t =
     let module Value = Pgx_async.Value in
     let value to_value field = to_value (Field.get field t) in
-    Fields.to_list ~id:(value Value.of_int) ~name:(value Value.of_string)
+    Fields.to_list ~id:(value Tag_id.to_pgx_async_value) ~name:(value Value.of_string)
   ;;
 
   let create_sql =
@@ -171,12 +172,12 @@ end
 
 module Post = struct
   type t =
-    { id : int
+    { id : Post_id.t
     ; title : string
     ; slug : string
     ; content_en : string option
     ; content_ko : string option
-    ; author_id : int
+    ; author_id : User_id.t
     ; created_at : Time_ns.t
     ; special_post : bool (* pinned to the about/main pages *)
     ; hidden : bool (* soft delete *)
@@ -186,10 +187,8 @@ module Post = struct
   let table = "post"
 
   let content_by_language t : string Language.Map.t =
-    [ Language.English, t.content_en; Korean, t.content_ko ]
-    |> List.filter_map ~f:(fun (language, content) ->
-      Option.map content ~f:(fun content -> language, content))
-    |> Language.Map.of_alist_exn
+    Language.Map.of_alist_exn [ English, t.content_en; Korean, t.content_ko ]
+    |> Map.filter_map ~f:Fn.id
   ;;
 
   let columns = Fields.names
@@ -207,12 +206,12 @@ module Post = struct
       ; special_post
       ; hidden
       ] ->
-      { id = Value.to_int_exn id
+      { id = Post_id.of_pgx_async_value_exn id
       ; title = Value.to_string_exn title
       ; slug = Value.to_string_exn slug
       ; content_en = Value.to_string content_en
       ; content_ko = Value.to_string content_ko
-      ; author_id = Value.to_int_exn author_id
+      ; author_id = User_id.of_pgx_async_value_exn author_id
       ; created_at = time_ns_of_value_exn created_at
       ; special_post = Value.to_bool_exn special_post
       ; hidden = Value.to_bool_exn hidden
@@ -224,12 +223,12 @@ module Post = struct
     let module Value = Pgx_async.Value in
     let value to_value field = to_value (Field.get field t) in
     Fields.to_list
-      ~id:(value Value.of_int)
+      ~id:(value Post_id.to_pgx_async_value)
       ~title:(value Value.of_string)
       ~slug:(value Value.of_string)
       ~content_en:(value (Value.opt Value.of_string))
       ~content_ko:(value (Value.opt Value.of_string))
-      ~author_id:(value Value.of_int)
+      ~author_id:(value User_id.to_pgx_async_value)
       ~created_at:(value value_of_time_ns)
       ~special_post:(value Value.of_bool)
       ~hidden:(value Value.of_bool)
@@ -256,9 +255,9 @@ end
 
 module Publication = struct
   type t =
-    { id : int
+    { id : Publication_id.t
     ; title : string
-    ; image_id : int
+    ; image_id : Image_id.t
     ; authors : string
     ; journal : string
     ; link : string option
@@ -273,9 +272,9 @@ module Publication = struct
     let module Value = Pgx_async.Value in
     match row with
     | [ id; title; image_id; authors; journal; link; hidden ] ->
-      { id = Value.to_int_exn id
+      { id = Publication_id.of_pgx_async_value_exn id
       ; title = Value.to_string_exn title
-      ; image_id = Value.to_int_exn image_id
+      ; image_id = Image_id.of_pgx_async_value_exn image_id
       ; authors = Value.to_string_exn authors
       ; journal = Value.to_string_exn journal
       ; link = Value.to_string link
@@ -288,9 +287,9 @@ module Publication = struct
     let module Value = Pgx_async.Value in
     let value to_value field = to_value (Field.get field t) in
     Fields.to_list
-      ~id:(value Value.of_int)
+      ~id:(value Publication_id.to_pgx_async_value)
       ~title:(value Value.of_string)
-      ~image_id:(value Value.of_int)
+      ~image_id:(value Image_id.to_pgx_async_value)
       ~authors:(value Value.of_string)
       ~journal:(value Value.of_string)
       ~link:(value (Value.opt Value.of_string))
@@ -316,7 +315,7 @@ end
 
 module News = struct
   type t =
-    { id : int
+    { id : News_id.t
     ; content : string
     ; date : Date.t
     }
@@ -329,7 +328,7 @@ module News = struct
     let module Value = Pgx_async.Value in
     match row with
     | [ id; content; date ] ->
-      { id = Value.to_int_exn id
+      { id = News_id.of_pgx_async_value_exn id
       ; content = Value.to_string_exn content
       ; date = Value.to_date_exn date
       }
@@ -340,7 +339,7 @@ module News = struct
     let module Value = Pgx_async.Value in
     let value to_value field = to_value (Field.get field t) in
     Fields.to_list
-      ~id:(value Value.of_int)
+      ~id:(value News_id.to_pgx_async_value)
       ~content:(value Value.of_string)
       ~date:(value Value.of_date)
   ;;
@@ -361,7 +360,7 @@ end
 module Session = struct
   type t =
     { token_hash : Token.Hash.t (* of the token in the session cookie *)
-    ; user_id : int
+    ; user_id : User_id.t
     ; expires_at : Time_ns.t
     }
   [@@deriving fields]
@@ -374,7 +373,7 @@ module Session = struct
     match row with
     | [ token_hash; user_id; expires_at ] ->
       { token_hash = token_hash_of_value_exn token_hash
-      ; user_id = Value.to_int_exn user_id
+      ; user_id = User_id.of_pgx_async_value_exn user_id
       ; expires_at = time_ns_of_value_exn expires_at
       }
     | _ -> raise_s [%message "Unexpected row shape for Session" (row : Value.t list)]
@@ -385,7 +384,7 @@ module Session = struct
     let value to_value field = to_value (Field.get field t) in
     Fields.to_list
       ~token_hash:(value value_of_token_hash)
-      ~user_id:(value Value.of_int)
+      ~user_id:(value User_id.to_pgx_async_value)
       ~expires_at:(value value_of_time_ns)
   ;;
 
@@ -409,7 +408,7 @@ module Api_token = struct
   type t =
     { label : string
     ; token_hash : Token.Hash.t (* of the token in the [Authorization] header *)
-    ; user_id : int
+    ; user_id : User_id.t
     ; created_at : Time_ns.t
     }
   [@@deriving fields]
@@ -423,7 +422,7 @@ module Api_token = struct
     | [ label; token_hash; user_id; created_at ] ->
       { label = Value.to_string_exn label
       ; token_hash = token_hash_of_value_exn token_hash
-      ; user_id = Value.to_int_exn user_id
+      ; user_id = User_id.of_pgx_async_value_exn user_id
       ; created_at = time_ns_of_value_exn created_at
       }
     | _ -> raise_s [%message "Unexpected row shape for Api_token" (row : Value.t list)]
@@ -435,7 +434,7 @@ module Api_token = struct
     Fields.to_list
       ~label:(value Value.of_string)
       ~token_hash:(value value_of_token_hash)
-      ~user_id:(value Value.of_int)
+      ~user_id:(value User_id.to_pgx_async_value)
       ~created_at:(value value_of_time_ns)
   ;;
 
@@ -455,8 +454,8 @@ end
 
 module Post_tag = struct
   type t =
-    { post_id : int
-    ; tag_id : int
+    { post_id : Post_id.t
+    ; tag_id : Tag_id.t
     }
   [@@deriving fields]
 
@@ -467,14 +466,18 @@ module Post_tag = struct
     let module Value = Pgx_async.Value in
     match row with
     | [ post_id; tag_id ] ->
-      { post_id = Value.to_int_exn post_id; tag_id = Value.to_int_exn tag_id }
+      { post_id = Post_id.of_pgx_async_value_exn post_id
+      ; tag_id = Tag_id.of_pgx_async_value_exn tag_id
+      }
     | _ -> raise_s [%message "Unexpected row shape for Post_tag" (row : Value.t list)]
   ;;
 
   let to_row t =
     let module Value = Pgx_async.Value in
     let value to_value field = to_value (Field.get field t) in
-    Fields.to_list ~post_id:(value Value.of_int) ~tag_id:(value Value.of_int)
+    Fields.to_list
+      ~post_id:(value Post_id.to_pgx_async_value)
+      ~tag_id:(value Tag_id.to_pgx_async_value)
   ;;
 
   (* Needs secondary index based on [tag_id] *)

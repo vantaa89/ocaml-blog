@@ -11,18 +11,24 @@ let add_publication_command =
      and journal = flag "-journal" (required string) ~doc:"TEXT the journal or conference"
      and link = flag "-link" (optional string) ~doc:"URL where the paper can be read"
      and image_id =
-       flag "-image-id" (required int) ~doc:"ID the thumbnail, as [image list] shows"
+       flag
+         "-image-id"
+         (required (Command.Arg_type.map int ~f:Ids.Image_id.of_int_exn))
+         ~doc:"ID the thumbnail, as [image list] shows"
      in
      fun () ->
        Database.with_connection ~f:(fun db ->
          let open Deferred.Or_error.Let_syntax in
          match%bind Database.Image.find_by_id db ~id:image_id with
-         | None -> Deferred.Or_error.error_s [%message "No such image" (image_id : int)]
+         | None ->
+           Deferred.Or_error.error_s
+             [%message "No such image" (image_id : Ids.Image_id.t)]
          | Some (_ : Database_schema.Image.t) ->
            let%map publication =
              Database.Publication.create db ~title ~image_id ~authors ~journal ~link
            in
-           print_s [%message "Created publication" ~id:(publication.id : int)]))
+           print_s
+             [%message "Created publication" ~id:(publication.id : Ids.Publication_id.t)]))
 ;;
 
 let list_publications_command =
@@ -41,7 +47,7 @@ let list_publications_command =
              print_s
                [%message
                  ""
-                   ~id:(publication.id : int)
+                   ~id:(publication.id : Ids.Publication_id.t)
                    ~title:(publication.title : string)
                    ~authors:(publication.authors : string)
                    ~journal:(publication.journal : string)
@@ -53,7 +59,8 @@ let list_publications_command =
 let id_flag =
   Command.Param.flag
     "-id"
-    (Command.Param.required Command.Param.int)
+    (Command.Param.required
+       (Command.Arg_type.map Command.Param.int ~f:Ids.Publication_id.of_int_exn))
     ~doc:"ID the publication, as [list] shows"
 ;;
 

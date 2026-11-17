@@ -10,6 +10,19 @@ val user : id:int -> username:string -> Database_schema.User.t
 (** The password of every user [user] makes *)
 val password : string
 
+val post
+  :  ?title:string (* default: [slug], capitalized *)
+  -> ?content_en:
+       string (* default: ["Content of <title>"]. The Korean content is [None]. *)
+  -> ?created_at:Time_ns.t (* default: 2026-08-01 00:00:00Z, when [with_server] starts *)
+  -> ?special_post:bool (* default: [false] *)
+  -> ?hidden:bool (* default: [false] *)
+  -> id:int
+  -> slug:string
+  -> author:Database_schema.User.t
+  -> unit
+  -> Database_schema.Post.t
+
 type t
 
 (** What a client presents to be recognized: an API token as [Authorization: Bearer], or

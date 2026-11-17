@@ -19,7 +19,7 @@ end
 
 module User : sig
   type t =
-    { id : int
+    { id : User_id.t
     ; username : string
     ; email : string
     ; password_hash : string
@@ -32,7 +32,7 @@ end
 
 module Image : sig
   type t =
-    { id : int
+    { id : Image_id.t
     ; filename : string
     ; date : Date.t
     }
@@ -44,7 +44,7 @@ end
 
 module Tag : sig
   type t =
-    { id : int
+    { id : Tag_id.t
     ; name : string
     }
 
@@ -53,12 +53,12 @@ end
 
 module Post : sig
   type t =
-    { id : int
+    { id : Post_id.t
     ; title : string
     ; slug : string
     ; content_en : string option
     ; content_ko : string option
-    ; author_id : int
+    ; author_id : User_id.t
     ; created_at : Time_ns.t
     ; special_post : bool
     ; hidden : bool
@@ -71,9 +71,9 @@ end
 
 module Publication : sig
   type t =
-    { id : int
+    { id : Publication_id.t
     ; title : string
-    ; image_id : int
+    ; image_id : Image_id.t
     ; authors : string
     ; journal : string
     ; link : string option
@@ -85,7 +85,7 @@ end
 
 module News : sig
   type t =
-    { id : int
+    { id : News_id.t
     ; content : string
     ; date : Date.t
     }
@@ -96,7 +96,7 @@ end
 module Session : sig
   type t =
     { token_hash : Token.Hash.t
-    ; user_id : int
+    ; user_id : User_id.t
     ; expires_at : Time_ns.t
     }
 
@@ -107,7 +107,7 @@ module Api_token : sig
   type t =
     { label : string
     ; token_hash : Token.Hash.t
-    ; user_id : int
+    ; user_id : User_id.t
     ; created_at : Time_ns.t
     }
 
@@ -116,8 +116,8 @@ end
 
 module Post_tag : sig
   type t =
-    { post_id : int
-    ; tag_id : int
+    { post_id : Post_id.t
+    ; tag_id : Tag_id.t
     }
 
   include Table with type t := t

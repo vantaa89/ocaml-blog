@@ -27,4 +27,4 @@ val current_user_id
   :  db:Database.t
   -> now:Time_ns.t
   -> session_token:Token.t option
-  -> int option Deferred.Or_error.t
+  -> User_id.t option Deferred.Or_error.t

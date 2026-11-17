@@ -31,7 +31,7 @@ let add_image_command =
            print_s
              [%message
                "Created image"
-                 ~id:(image.id : int)
+                 ~id:(image.id : Ids.Image_id.t)
                  ~url:(Database_schema.Image.url image : string)]))
 ;;
 
@@ -45,7 +45,9 @@ let list_images_command =
          List.iter images ~f:(fun image ->
            print_s
              [%message
-               "" ~id:(image.id : int) ~url:(Database_schema.Image.url image : string)])))
+               ""
+                 ~id:(image.id : Ids.Image_id.t)
+                 ~url:(Database_schema.Image.url image : string)])))
 ;;
 
 let command =

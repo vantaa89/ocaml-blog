@@ -14,16 +14,16 @@ module Post : sig
     -> slug:string
     -> content_en:string option
     -> content_ko:string option
-    -> author_id:int
+    -> author_id:User_id.t
     -> special_post:bool
     -> now:Time_ns.t
     -> Database_schema.Post.t Deferred.Or_error.t
 
   val find_by_slug : t -> slug:string -> Database_schema.Post.t option Deferred.Or_error.t
-  val find_by_id : t -> id:int -> Database_schema.Post.t option Deferred.Or_error.t
+  val find_by_id : t -> id:Post_id.t -> Database_schema.Post.t option Deferred.Or_error.t
 
   (** A hidden post is visible to its author alone. *)
-  val visible_to : viewer:int option -> Database_schema.Post.t -> bool
+  val visible_to : viewer:User_id.t option -> Database_schema.Post.t -> bool
 
   (** Returns list of posts, restricted to the posts carrying [tag] (regardless of case)
       when it is given. Special posts are excluded, and so are the hidden posts of
@@ -31,7 +31,7 @@ module Post : sig
   val list
     :  t
     -> ?tag:string
-    -> viewer:int option
+    -> viewer:User_id.t option
     -> ?limit:int
     -> ?offset:int (* default: [0] *)
     -> unit
@@ -44,12 +44,12 @@ module Post : sig
     -> unit
     -> Database_schema.Post.t list Deferred.Or_error.t
 
-  val set_hidden : t -> id:int -> hidden:bool -> unit Deferred.Or_error.t
+  val set_hidden : t -> id:Post_id.t -> hidden:bool -> unit Deferred.Or_error.t
 
   (** Updates the post with [id]. Fails if the slug is already used by other post. *)
   val update
     :  t
-    -> id:int
+    -> id:Post_id.t
     -> title:string
     -> slug:string
     -> content_en:string option
@@ -67,7 +67,7 @@ module User : sig
     -> date_joined:Date.t
     -> Database_schema.User.t Deferred.Or_error.t
 
-  val find_by_id : t -> id:int -> Database_schema.User.t option Deferred.Or_error.t
+  val find_by_id : t -> id:User_id.t -> Database_schema.User.t option Deferred.Or_error.t
   val list : t -> Database_schema.User.t list Deferred.Or_error.t
 
   val set_password_hash
@@ -99,7 +99,11 @@ module Image : sig
     -> date:Date.t
     -> Database_schema.Image.t Deferred.Or_error.t
 
-  val find_by_id : t -> id:int -> Database_schema.Image.t option Deferred.Or_error.t
+  val find_by_id
+    :  t
+    -> id:Image_id.t
+    -> Database_schema.Image.t option Deferred.Or_error.t
+
   val list : t -> Database_schema.Image.t list Deferred.Or_error.t
 end
 
@@ -114,15 +118,23 @@ module Tag : sig
 end
 
 module Post_tag : sig
-  val tags_for_post : t -> post_id:int -> Database_schema.Tag.t list Deferred.Or_error.t
-  val set_tags : t -> post_id:int -> tag_ids:int list -> unit Deferred.Or_error.t
+  val tags_for_post
+    :  t
+    -> post_id:Post_id.t
+    -> Database_schema.Tag.t list Deferred.Or_error.t
+
+  val set_tags
+    :  t
+    -> post_id:Post_id.t
+    -> tag_ids:Tag_id.t list
+    -> unit Deferred.Or_error.t
 end
 
 module Publication : sig
   val create
     :  t
     -> title:string
-    -> image_id:int
+    -> image_id:Image_id.t
     -> authors:string
     -> journal:string
     -> link:string option
@@ -135,10 +147,10 @@ module Publication : sig
     -> Database_schema.Publication.t list Deferred.Or_error.t
 
   (** Fails if there is no publication with [id]. *)
-  val set_hidden : t -> id:int -> hidden:bool -> unit Deferred.Or_error.t
+  val set_hidden : t -> id:Publication_id.t -> hidden:bool -> unit Deferred.Or_error.t
 
   (** Fails if there is no publication with [id]. The image stays. *)
-  val delete : t -> id:int -> unit Deferred.Or_error.t
+  val delete : t -> id:Publication_id.t -> unit Deferred.Or_error.t
 end
 
 module News : sig
@@ -151,14 +163,14 @@ module News : sig
   val list : t -> Database_schema.News.t list Deferred.Or_error.t
 
   (** Fails if there is no news with [id]. *)
-  val delete : t -> id:int -> unit Deferred.Or_error.t
+  val delete : t -> id:News_id.t -> unit Deferred.Or_error.t
 end
 
 module Session : sig
   val create
     :  t
     -> token_hash:Token.Hash.t
-    -> user_id:int
+    -> user_id:User_id.t
     -> expires_at:Time_ns.t
     -> Database_schema.Session.t Deferred.Or_error.t
 
@@ -180,7 +192,7 @@ module Api_token : sig
     :  t
     -> label:string
     -> token_hash:Token.Hash.t
-    -> user_id:int
+    -> user_id:User_id.t
     -> created_at:Time_ns.t
     -> Database_schema.Api_token.t Deferred.Or_error.t
 

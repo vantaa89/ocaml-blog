@@ -6,19 +6,7 @@ let () = Log.Global.set_output []
 let author = Server_test_helpers.user ~id:1 ~username:"author"
 let username = author.username
 let password = Server_test_helpers.password
-
-let hidden_post : Database_schema.Post.t =
-  { id = 1
-  ; title = "Draft"
-  ; slug = "draft"
-  ; content_en = Some "Not ready yet"
-  ; content_ko = None
-  ; author_id = author.id
-  ; created_at = Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z"
-  ; special_post = false
-  ; hidden = true
-  }
-;;
+let hidden_post = Server_test_helpers.post ~id:1 ~slug:"draft" ~author ~hidden:true ()
 
 let with_seeded_server ~f =
   Server_test_helpers.with_server

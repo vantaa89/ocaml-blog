@@ -2,6 +2,7 @@ module Api = Api
 module Config = Config
 module Database = Database
 module Database_schema = Database_schema
+module Ids = Ids
 module Image_store = Image_store
 module Password = Password
 module Rate_limiter = Rate_limiter

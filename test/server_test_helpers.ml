@@ -6,12 +6,39 @@ let cookie_name = "sessionid"
 let password = "password"
 
 let user ~id ~username : Database_schema.User.t =
-  { id
+  { id = Ids.User_id.of_int_exn id
   ; username
   ; email = "user@example.com"
   ; password_hash = Password.hash_exn password
   ; date_joined = Date.of_string "2026-08-01"
   ; last_login = None
+  }
+;;
+
+let start = Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z"
+
+let post
+      ?title
+      ?content_en
+      ?(created_at = start)
+      ?(special_post = false)
+      ?(hidden = false)
+      ~id
+      ~slug
+      ~(author : Database_schema.User.t)
+      ()
+  : Database_schema.Post.t
+  =
+  let title = Option.value title ~default:(String.capitalize slug) in
+  { id = Ids.Post_id.of_int_exn id
+  ; title
+  ; slug
+  ; content_en = Some (Option.value content_en ~default:[%string "Content of %{title}"])
+  ; content_ko = None
+  ; author_id = author.id
+  ; created_at
+  ; special_post
+  ; hidden
   }
 ;;
 
@@ -28,9 +55,7 @@ module Credential = struct
 end
 
 let with_server db ~f =
-  let time_source =
-    Time_source.create ~now:(Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z") ()
-  in
+  let time_source = Time_source.create ~now:start () in
   let media_dir = Filename_unix.temp_dir "media" "" in
   let%bind server =
     Web_server.serve
@@ -69,7 +94,7 @@ let credential_headers credential =
     [ Cohttp.Cookie.Cookie_hdr.serialize [ cookie_name, token ] ]
 ;;
 
-let post ?origin ?credential t ~path params =
+let post_form ?origin ?credential t ~path params =
   let headers =
     ("origin", Option.value origin ~default:(Uri.to_string (uri t)))
     :: credential_headers credential
@@ -89,7 +114,7 @@ let login ?origin ?username ?password t =
   let%map response =
     [ field "username" username; field "password" password ]
     |> List.filter_opt
-    |> post ?origin t ~path:Urls.login_path
+    |> post_form ?origin t ~path:Urls.login_path
   in
   let set_cookies =
     Cohttp.Cookie.Set_cookie_hdr.extract (Cohttp.Response.headers response)
@@ -102,7 +127,7 @@ let login ?origin ?username ?password t =
   response, credential
 ;;
 
-let logout ?credential t = post ?credential t ~path:Urls.logout_path []
+let logout ?credential t = post_form ?credential t ~path:Urls.logout_path []
 
 let get ?credential t ~path =
   let%bind response, body =

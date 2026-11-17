@@ -16,7 +16,7 @@ let add_news_command =
      fun () ->
        Database.with_connection ~f:(fun db ->
          let%map.Deferred.Or_error news = Database.News.create db ~content ~date in
-         print_s [%message "Created news" ~id:(news.id : int)]))
+         print_s [%message "Created news" ~id:(news.id : Ids.News_id.t)]))
 ;;
 
 let list_news_command =
@@ -30,7 +30,7 @@ let list_news_command =
            print_s
              [%message
                ""
-                 ~id:(news.id : int)
+                 ~id:(news.id : Ids.News_id.t)
                  ~date:(news.date : Date.t)
                  ~content:(news.content : string)])))
 ;;
@@ -39,7 +39,10 @@ let delete_news_command =
   Command.async_or_error
     ~summary:"Delete a news item"
     (let%map_open.Command id =
-       flag "-id" (required int) ~doc:"ID the news to delete, as [list] shows"
+       flag
+         "-id"
+         (required (Command.Arg_type.map int ~f:Ids.News_id.of_int_exn))
+         ~doc:"ID the news to delete, as [list] shows"
      in
      fun () -> Database.with_connection ~f:(fun db -> Database.News.delete db ~id))
 ;;

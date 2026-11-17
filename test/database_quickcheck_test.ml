@@ -250,23 +250,24 @@ end
 module Side = struct
   type t =
     { db : Database.t
-    ; posts : int Queue.t
-    ; tags : int Queue.t
-    ; users : int Queue.t
-    ; publications : int Queue.t
-    ; news : int Queue.t
+    ; posts : Ids.Post_id.t Queue.t
+    ; tags : Ids.Tag_id.t Queue.t
+    ; users : Ids.User_id.t Queue.t
+    ; publications : Ids.Publication_id.t Queue.t
+    ; news : Ids.News_id.t Queue.t
       (* Postgres does not guarantee the order between the news of the same date for
          [News.list] queries. Therefore, we make every news item get a distinct date,
          derived from how many were created so that both sides agree. *)
-    ; author_id : int
-    ; image_id : int
+    ; author_id : Ids.User_id.t
+    ; image_id : Ids.Image_id.t
     ; now : Time_ns.t
     }
 
-  let ref_of_id queue id : Ref.t =
-    match Queue.findi queue ~f:(fun _ id' -> id' = id) with
+  let ref_of_id (type id) (module Id : Ids.Id with type t = id) queue id : Ref.t =
+    match Queue.findi queue ~f:(fun _ id' -> Id.equal id' id) with
     | Some (index, _) -> index
-    | None -> raise_s [%message "id not found in queue" (id : int) (queue : int Queue.t)]
+    | None ->
+      raise_s [%message "id not found in queue" (id : Id.t) (queue : Id.t Queue.t)]
   ;;
 
   let resolve queue index =
@@ -283,7 +284,7 @@ module Side = struct
   ;;
 
   let post_ref t (post : Database_schema.Post.t) : Observed.Post.t =
-    { id = ref_of_id t.posts post.id
+    { id = ref_of_id (module Ids.Post_id) t.posts post.id
     ; title = post.title
     ; slug = post.slug
     ; content_en = post.content_en
@@ -294,12 +295,12 @@ module Side = struct
   ;;
 
   let tag_ref t (tag : Database_schema.Tag.t) : Observed.Tag.t =
-    { id = ref_of_id t.tags tag.id; name = tag.name }
+    { id = ref_of_id (module Ids.Tag_id) t.tags tag.id; name = tag.name }
   ;;
 
   let session_ref t (session : Database_schema.Session.t) : Observed.Session.t =
     { token_hash = session.token_hash
-    ; user = ref_of_id t.users session.user_id
+    ; user = ref_of_id (module Ids.User_id) t.users session.user_id
     ; expires_at = session.expires_at
     }
   ;;
@@ -307,7 +308,7 @@ module Side = struct
   let api_token_ref t (api_token : Database_schema.Api_token.t) : Observed.Api_token.t =
     { label = api_token.label
     ; token_hash = api_token.token_hash
-    ; user = ref_of_id t.users api_token.user_id
+    ; user = ref_of_id (module Ids.User_id) t.users api_token.user_id
     ; created_at = api_token.created_at
     }
   ;;
@@ -406,7 +407,7 @@ let run_op (side : Side.t) (op : Op.t) =
         Database.Tag.find_or_create side.db ~name:(Test_tag_name.to_string name)
       in
       (* [find_or_create] may have found rather than created. *)
-      (match Queue.mem side.tags tag.id ~equal:Int.equal with
+      (match Queue.mem side.tags tag.id ~equal:Ids.Tag_id.equal with
        | true -> ()
        | false -> Queue.enqueue side.tags tag.id);
       Response.Tag (Some (Side.tag_ref side tag))

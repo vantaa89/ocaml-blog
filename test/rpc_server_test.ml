@@ -9,22 +9,19 @@ let author = Server_test_helpers.user ~id:1 ~username:"author"
 let password = Server_test_helpers.password
 
 (* Posts are ordered by [created_at], so each one gets a distinct day. *)
-let post ~id ~slug ~title ~special_post : Database_schema.Post.t =
-  let date = Date.add_days start_date id in
-  { id
-  ; title
-  ; slug
-  ; content_en = Some [%string "Content of %{title}"]
-  ; content_ko = None
-  ; author_id = author.id
-  ; created_at =
-      Time_ns.of_date_ofday
-        ~zone:(Timezone.find_exn "Asia/Seoul")
-        date
-        Time_ns.Ofday.start_of_day
-  ; special_post
-  ; hidden = false
-  }
+let post ~id ~slug ~title ~special_post =
+  Server_test_helpers.post
+    ~id
+    ~slug
+    ~title
+    ~special_post
+    ~author
+    ~created_at:
+      (Time_ns.of_date_ofday
+         ~zone
+         (Date.add_days start_date id)
+         Time_ns.Ofday.start_of_day)
+    ()
 ;;
 
 let posts =
@@ -33,8 +30,11 @@ let posts =
   ]
 ;;
 
-let tags : Database_schema.Tag.t list = [ { id = 1; name = "Tag" } ]
-let post_tags : Database_schema.Post_tag.t list = [ { post_id = 2; tag_id = 1 } ]
+let tags : Database_schema.Tag.t list = [ { id = Ids.Tag_id.of_int_exn 1; name = "Tag" } ]
+
+let post_tags : Database_schema.Post_tag.t list =
+  [ { post_id = Ids.Post_id.of_int_exn 2; tag_id = Ids.Tag_id.of_int_exn 1 } ]
+;;
 
 let with_seeded_server ~f =
   Server_test_helpers.with_server
@@ -221,19 +221,24 @@ let%expect_test
            ])
       ~tags
       ~post_tags
-      ~images:[ { id = 1; filename = "paper.png"; date = Date.of_string "2024-01-15" } ]
+      ~images:
+        [ { id = Ids.Image_id.of_int_exn 1
+          ; filename = "paper.png"
+          ; date = Date.of_string "2024-01-15"
+          }
+        ]
       ~publication:
-        [ { id = 1
+        [ { id = Ids.Publication_id.of_int_exn 1
           ; title = "A paper"
-          ; image_id = 1
+          ; image_id = Ids.Image_id.of_int_exn 1
           ; authors = "An author"
           ; journal = "A journal"
           ; link = Some "https://example.com/paper"
           ; hidden = false
           }
-        ; { id = 2
+        ; { id = Ids.Publication_id.of_int_exn 2
           ; title = "A retracted paper"
-          ; image_id = 1
+          ; image_id = Ids.Image_id.of_int_exn 1
           ; authors = "An author"
           ; journal = "A journal"
           ; link = None
@@ -241,8 +246,14 @@ let%expect_test
           }
         ]
       ~news:
-        [ { id = 1; content = "Older news"; date = Date.of_string "2024-02-01" }
-        ; { id = 2; content = "Newer news"; date = Date.of_string "2024-02-20" }
+        [ { id = Ids.News_id.of_int_exn 1
+          ; content = "Older news"
+          ; date = Date.of_string "2024-02-01"
+          }
+        ; { id = Ids.News_id.of_int_exn 2
+          ; content = "Newer news"
+          ; date = Date.of_string "2024-02-20"
+          }
         ]
       ()
   in

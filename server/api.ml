@@ -49,7 +49,7 @@ let respond ~db ~media_dir ~body endpoint request =
       (match%bind Database.Post.find_by_slug db ~slug:"about" with
        | None -> return (`Not_found, "There is no about post")
        | Some { id; title; slug; author_id; content_ko; special_post; _ } ->
-         (match author_id = user_id with
+         (match User_id.equal author_id user_id with
           | false -> return (`Forbidden, "The about post belongs to another user")
           | true ->
             (match Cohttp.Request.encoding request with

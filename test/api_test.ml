@@ -8,25 +8,16 @@ let username = author.username
 let password = Server_test_helpers.password
 let other_user = Server_test_helpers.user ~id:2 ~username:"other"
 let now = Time_ns.of_string_with_utc_offset "2026-08-01 00:00:00Z"
-
-let post ~id ~slug ~(author : Database_schema.User.t) : Database_schema.Post.t =
-  { id
-  ; title = String.capitalize slug
-  ; slug
-  ; content_en = Some "<p>old</p>"
-  ; content_ko = None
-  ; author_id = author.id
-  ; created_at = now
-  ; special_post = false
-  ; hidden = false
-  }
-;;
+let slug_about = "about"
 
 let cv_document =
   {|<!DOCTYPE html><html><head><title>CV</title></head><body><h2>Education</h2></body></html>|}
 ;;
 
-let with_api_server ?(posts = [ post ~id:1 ~slug:"about" ~author ]) f =
+let with_api_server
+      ?(posts = [ Server_test_helpers.post ~id:1 ~slug:"about" ~author () ])
+      f
+  =
   let db =
     Database.For_testing.create_in_memory ~users:[ author; other_user ] ~posts ()
   in
@@ -89,7 +80,7 @@ let%expect_test "the API refuses a missing, wrong, or revoked token, and a sessi
       ((status 401) (www_authenticate (Bearer))
        (body "Expected a valid API token")) |}];
     let%bind () = print_post ~db ~slug:"about" in
-    [%expect {| ((title About) (content_en (<p>old</p>)) (content_ko ())) |}];
+    [%expect {| ((title About) (content_en ("Content of About")) (content_ko ())) |}];
     return ())
 ;;
 
@@ -138,7 +129,9 @@ let%expect_test "/api/about is refused without a <body>, or the user does not ow
   let%bind () = put_about ~posts:[] cv_document in
   [%expect {| ((status 404) (www_authenticate ()) (body "There is no about post")) |}];
   let%bind () =
-    put_about ~posts:[ post ~id:1 ~slug:"about" ~author:other_user ] cv_document
+    put_about
+      ~posts:[ Server_test_helpers.post ~id:1 ~slug:"about" ~author:other_user () ]
+      cv_document
   in
   [%expect
     {|
@@ -194,7 +187,7 @@ let%expect_test "/api/cv is refused when the user does not own about" =
       [%expect {| ((status 404) (www_authenticate ()) (body "File not found")) |}])
   in
   with_api_server
-    ~posts:[ post ~id:1 ~slug:"about" ~author:other_user ]
+    ~posts:[ Server_test_helpers.post ~id:1 ~slug:"about" ~author:other_user () ]
     (fun ~db:_ ~server ~credential ->
        let%bind () =
          Server_test_helpers.put ~credential server ~path:"/api/cv" ~body:"%PDF-1.7"

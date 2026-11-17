@@ -44,14 +44,15 @@ let create_tables t =
 ;;
 
 let insert_exn
-      (type row)
+      (type id row)
       (module Table : Database_schema.Table with type t = row)
+      (module Id : Id with type t = id)
       connection
-      ~(row : id:int -> row)
+      ~(row : id:id -> row)
   =
   Deferred.Or_error.try_with (fun () ->
     let columns, values =
-      List.zip_exn Table.columns (Table.to_row (row ~id:0))
+      List.zip_exn Table.columns (Table.to_row (row ~id:(Id.of_int_exn 1)))
       |> List.filter ~f:(fun (column, _) -> not (String.equal column "id"))
       |> List.unzip
     in
@@ -70,7 +71,7 @@ let insert_exn
           "INSERT INTO %{Table.table} (%{columns}) VALUES (%{placeholders}) RETURNING id"]
     in
     match rows with
-    | [ [ id ] ] -> row ~id:(Pgx_async.Value.to_int_exn id)
+    | [ [ id ] ] -> row ~id:(Id.of_pgx_async_value_exn id)
     | rows ->
       raise_s
         [%message
@@ -120,17 +121,18 @@ module Post = struct
   let find_by_id t ~id =
     match t with
     | Mock { posts; _ } ->
-      List.find !posts ~f:(fun post -> post.id = id) |> Deferred.Or_error.return
+      List.find !posts ~f:(fun post -> Post_id.equal post.id id)
+      |> Deferred.Or_error.return
     | Real { connection } ->
       find_unique
         (module Database_schema.Post)
         connection
         ~where:"id = $1"
-        ~param:(Pgx_async.Value.of_int id)
+        ~param:(Post_id.to_pgx_async_value id)
   ;;
 
   let visible_to ~viewer (post : Database_schema.Post.t) =
-    (not post.hidden) || [%equal: int option] viewer (Some post.author_id)
+    (not post.hidden) || [%equal: User_id.t option] viewer (Some post.author_id)
   ;;
 
   let list t ?tag ~viewer ?limit ?(offset = 0) () =
@@ -142,9 +144,10 @@ module Post = struct
         | Some tag ->
           List.filter !posts ~f:(fun post ->
             List.exists !post_tags ~f:(fun post_tag ->
-              post_tag.post_id = post.id
+              Post_id.equal post_tag.post_id post.id
               && List.exists !tags ~f:(fun candidate ->
-                candidate.id = post_tag.tag_id && String.Caseless.equal candidate.name tag)))
+                Tag_id.equal candidate.id post_tag.tag_id
+                && String.Caseless.equal candidate.name tag)))
       in
       let posts =
         List.filter tagged_posts ~f:(fun post ->
@@ -177,7 +180,7 @@ module Post = struct
           Pgx_async.execute
             connection
             ~params:
-              (Pgx_async.Value.opt Pgx_async.Value.of_int viewer
+              (Pgx_async.Value.opt User_id.to_pgx_async_value viewer
                :: Option.to_list (Option.map tag ~f:Pgx_async.Value.of_string))
             [%string
               "SELECT %{columns} FROM %{Database_schema.Post.table} WHERE NOT \
@@ -224,7 +227,7 @@ module Post = struct
     | Mock { posts; _ } ->
       posts
       := List.map !posts ~f:(fun post ->
-           match post.id = id with
+           match Post_id.equal post.id id with
            | true -> { post with hidden }
            | false -> post);
       Deferred.Or_error.return ()
@@ -232,7 +235,7 @@ module Post = struct
       Deferred.Or_error.try_with (fun () ->
         Pgx_async.execute_unit
           connection
-          ~params:[ Pgx_async.Value.of_bool hidden; Pgx_async.Value.of_int id ]
+          ~params:[ Pgx_async.Value.of_bool hidden; Post_id.to_pgx_async_value id ]
           [%string "UPDATE %{Database_schema.Post.table} SET hidden = $1 WHERE id = $2"])
   ;;
 
@@ -257,10 +260,11 @@ module Post = struct
            (Or_error.error_s
               [%message "duplicate key value violates unique constraint" (slug : string)])
        | true ->
-         let post = row ~id:(fresh_id last_id) in
+         let post = row ~id:(Post_id.of_int_exn (fresh_id last_id)) in
          posts := post :: !posts;
          Deferred.Or_error.return post)
-    | Real { connection } -> insert_exn (module Database_schema.Post) connection ~row
+    | Real { connection } ->
+      insert_exn (module Database_schema.Post) (module Post_id) connection ~row
   ;;
 
   let update t ~id ~title ~slug ~content_en ~content_ko ~special_post =
@@ -268,7 +272,7 @@ module Post = struct
     | Mock { posts; _ } ->
       (* The post keeping its own slug is not a duplicate, so it is left out of the
          check. *)
-      let others = List.filter !posts ~f:(fun post -> post.id <> id) in
+      let others = List.filter !posts ~f:(fun post -> not (Post_id.equal post.id id)) in
       (match is_unique others ~field:(fun post -> post.slug) ~value:slug with
        | false ->
          Deferred.return
@@ -277,7 +281,7 @@ module Post = struct
        | true ->
          posts
          := List.map !posts ~f:(fun post ->
-              match post.id = id with
+              match Post_id.equal post.id id with
               | true -> { post with title; slug; content_en; content_ko; special_post }
               | false -> post);
          Deferred.Or_error.return ())
@@ -289,7 +293,7 @@ module Post = struct
           ; Pgx_async.Value.opt Pgx_async.Value.of_string content_en
           ; Pgx_async.Value.opt Pgx_async.Value.of_string content_ko
           ; Pgx_async.Value.of_bool special_post
-          ; Pgx_async.Value.of_int id
+          ; Post_id.to_pgx_async_value id
           ]
         in
         Pgx_async.execute_unit
@@ -323,28 +327,30 @@ module User = struct
                   (username : string)
                   (email : string)])
        | true ->
-         let user = row ~id:(fresh_id last_id) in
+         let user = row ~id:(User_id.of_int_exn (fresh_id last_id)) in
          users := user :: !users;
          Deferred.Or_error.return user)
-    | Real { connection } -> insert_exn (module Database_schema.User) connection ~row
+    | Real { connection } ->
+      insert_exn (module Database_schema.User) (module User_id) connection ~row
   ;;
 
   let find_by_id t ~id =
     match t with
     | Mock { users; _ } ->
-      List.find !users ~f:(fun user -> user.id = id) |> Deferred.Or_error.return
+      List.find !users ~f:(fun user -> User_id.equal user.id id)
+      |> Deferred.Or_error.return
     | Real { connection } ->
       find_unique
         (module Database_schema.User)
         connection
         ~where:"id = $1"
-        ~param:(Pgx_async.Value.of_int id)
+        ~param:(User_id.to_pgx_async_value id)
   ;;
 
   let list t =
     match t with
     | Mock { users; _ } ->
-      List.sort !users ~compare:(fun a b -> Int.compare a.id b.id)
+      List.sort !users ~compare:(fun a b -> User_id.compare a.id b.id)
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
@@ -433,28 +439,30 @@ module Image = struct
     let row ~id : Database_schema.Image.t = { id; filename; date } in
     match t with
     | Mock { images; last_id; _ } ->
-      let image = row ~id:(fresh_id last_id) in
+      let image = row ~id:(Image_id.of_int_exn (fresh_id last_id)) in
       images := image :: !images;
       Deferred.Or_error.return image
-    | Real { connection } -> insert_exn (module Database_schema.Image) connection ~row
+    | Real { connection } ->
+      insert_exn (module Database_schema.Image) (module Image_id) connection ~row
   ;;
 
   let find_by_id t ~id =
     match t with
     | Mock { images; _ } ->
-      List.find !images ~f:(fun image -> image.id = id) |> Deferred.Or_error.return
+      List.find !images ~f:(fun image -> Image_id.equal image.id id)
+      |> Deferred.Or_error.return
     | Real { connection } ->
       find_unique
         (module Database_schema.Image)
         connection
         ~where:"id = $1"
-        ~param:(Pgx_async.Value.of_int id)
+        ~param:(Image_id.to_pgx_async_value id)
   ;;
 
   let list t =
     match t with
     | Mock { images; _ } ->
-      List.sort !images ~compare:(fun a b -> Int.compare a.id b.id)
+      List.sort !images ~compare:(fun a b -> Image_id.compare a.id b.id)
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
@@ -488,7 +496,9 @@ module Tag = struct
       (match List.find !tags ~f:(fun tag -> String.Caseless.equal tag.name name) with
        | Some tag -> Deferred.Or_error.return tag
        | None ->
-         let tag : Database_schema.Tag.t = { id = fresh_id last_id; name } in
+         let tag : Database_schema.Tag.t =
+           { id = Tag_id.of_int_exn (fresh_id last_id); name }
+         in
          tags := tag :: !tags;
          Deferred.Or_error.return tag)
     | Real { connection } ->
@@ -519,7 +529,9 @@ module Tag = struct
     | Mock { tags; post_tags; _ } ->
       !tags
       |> List.filter_map ~f:(fun tag ->
-        let count = List.count !post_tags ~f:(fun post_tag -> tag.id = post_tag.tag_id) in
+        let count =
+          List.count !post_tags ~f:(fun post_tag -> Tag_id.equal tag.id post_tag.tag_id)
+        in
         match Int.sign count with
         | Pos -> Some (tag, count)
         | Zero | Neg -> None)
@@ -554,15 +566,10 @@ module Post_tag = struct
   let tags_for_post t ~post_id =
     match t with
     | Mock { tags; post_tags; _ } ->
-      let tag_ids =
-        List.filter_map !post_tags ~f:(fun post_tag ->
-          match post_tag.post_id = post_id with
-          | true -> Some post_tag.tag_id
-          | false -> None)
-        |> Int.Set.of_list
-      in
-      List.filter !tags ~f:(fun tag -> Set.mem tag_ids tag.id)
-      |> List.sort ~compare:(fun a b -> Int.compare a.id b.id)
+      List.filter !tags ~f:(fun tag ->
+        List.exists !post_tags ~f:(fun post_tag ->
+          Post_id.equal post_tag.post_id post_id && Tag_id.equal post_tag.tag_id tag.id))
+      |> List.sort ~compare:(fun a b -> Tag_id.compare a.id b.id)
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
@@ -570,7 +577,7 @@ module Post_tag = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Pgx_async.Value.of_int post_id ]
+            ~params:[ Post_id.to_pgx_async_value post_id ]
             [%string
               "SELECT %{columns} FROM %{Database_schema.Tag.table} JOIN \
                %{Database_schema.Post_tag.table} ON %{Database_schema.Tag.table}.id = \
@@ -582,11 +589,12 @@ module Post_tag = struct
   ;;
 
   let set_tags t ~post_id ~tag_ids =
-    let tag_ids = List.dedup_and_sort tag_ids ~compare:Int.compare in
+    let tag_ids = List.dedup_and_sort tag_ids ~compare:Tag_id.compare in
     match t with
     | Mock { post_tags; _ } ->
       let kept =
-        List.filter !post_tags ~f:(fun post_tag -> post_tag.post_id <> post_id)
+        List.filter !post_tags ~f:(fun post_tag ->
+          not (Post_id.equal post_tag.post_id post_id))
       in
       let added =
         List.map tag_ids ~f:(fun tag_id ->
@@ -600,13 +608,14 @@ module Post_tag = struct
           let%bind () =
             Pgx_async.execute_unit
               connection
-              ~params:[ Pgx_async.Value.of_int post_id ]
+              ~params:[ Post_id.to_pgx_async_value post_id ]
               [%string "DELETE FROM %{Database_schema.Post_tag.table} WHERE post_id = $1"]
           in
           Deferred.List.iter tag_ids ~how:`Sequential ~f:(fun tag_id ->
             Pgx_async.execute_unit
               connection
-              ~params:[ Pgx_async.Value.of_int post_id; Pgx_async.Value.of_int tag_id ]
+              ~params:
+                [ Post_id.to_pgx_async_value post_id; Tag_id.to_pgx_async_value tag_id ]
               [%string
                 "INSERT INTO %{Database_schema.Post_tag.table} (post_id, tag_id) VALUES \
                  ($1, $2)"])))
@@ -620,11 +629,15 @@ module Publication = struct
     in
     match t with
     | Mock { publication; last_id; _ } ->
-      let publication_row = row ~id:(fresh_id last_id) in
+      let publication_row = row ~id:(Publication_id.of_int_exn (fresh_id last_id)) in
       publication := publication_row :: !publication;
       Deferred.Or_error.return publication_row
     | Real { connection } ->
-      insert_exn (module Database_schema.Publication) connection ~row
+      insert_exn
+        (module Database_schema.Publication)
+        (module Publication_id)
+        connection
+        ~row
   ;;
 
   let list t ?(include_hidden = false) () =
@@ -632,7 +645,7 @@ module Publication = struct
     | Mock { publication; _ } ->
       List.filter !publication ~f:(fun publication ->
         (not publication.hidden) || include_hidden)
-      |> List.sort ~compare:(fun a b -> Int.compare a.id b.id)
+      |> List.sort ~compare:(fun a b -> Publication_id.compare a.id b.id)
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
@@ -655,12 +668,17 @@ module Publication = struct
   let set_hidden t ~id ~hidden =
     match t with
     | Mock { publication; _ } ->
-      (match List.exists !publication ~f:(fun publication -> publication.id = id) with
-       | false -> Deferred.Or_error.error_s [%message "No such publication" (id : int)]
+      (match
+         List.exists !publication ~f:(fun publication ->
+           Publication_id.equal publication.id id)
+       with
+       | false ->
+         Deferred.Or_error.error_s
+           [%message "No such publication" (id : Publication_id.t)]
        | true ->
          publication
          := List.map !publication ~f:(fun publication ->
-              match publication.id = id with
+              match Publication_id.equal publication.id id with
               | true -> { publication with hidden }
               | false -> publication);
          Deferred.Or_error.return ())
@@ -669,13 +687,14 @@ module Publication = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Pgx_async.Value.of_bool hidden; Pgx_async.Value.of_int id ]
+            ~params:
+              [ Pgx_async.Value.of_bool hidden; Publication_id.to_pgx_async_value id ]
             [%string
               "UPDATE %{Database_schema.Publication.table} SET hidden = $1 WHERE id = $2 \
                RETURNING id"]
         in
         match rows with
-        | [] -> raise_s [%message "No such publication" (id : int)]
+        | [] -> raise_s [%message "No such publication" (id : Publication_id.t)]
         | _ :: _ -> ())
   ;;
 
@@ -683,9 +702,12 @@ module Publication = struct
     match t with
     | Mock { publication; _ } ->
       (match
-         List.partition_tf !publication ~f:(fun publication -> publication.id = id)
+         List.partition_tf !publication ~f:(fun publication ->
+           Publication_id.equal publication.id id)
        with
-       | [], _ -> Deferred.Or_error.error_s [%message "No such publication" (id : int)]
+       | [], _ ->
+         Deferred.Or_error.error_s
+           [%message "No such publication" (id : Publication_id.t)]
        | _ :: _, rest ->
          publication := rest;
          Deferred.Or_error.return ())
@@ -694,13 +716,13 @@ module Publication = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Pgx_async.Value.of_int id ]
+            ~params:[ Publication_id.to_pgx_async_value id ]
             [%string
               "DELETE FROM %{Database_schema.Publication.table} WHERE id = $1 RETURNING \
                id"]
         in
         match rows with
-        | [] -> raise_s [%message "No such publication" (id : int)]
+        | [] -> raise_s [%message "No such publication" (id : Publication_id.t)]
         | _ :: _ -> ())
   ;;
 end
@@ -710,10 +732,11 @@ module News = struct
     let row ~id : Database_schema.News.t = { id; content; date } in
     match t with
     | Mock { news; last_id; _ } ->
-      let news_row = row ~id:(fresh_id last_id) in
+      let news_row = row ~id:(News_id.of_int_exn (fresh_id last_id)) in
       news := news_row :: !news;
       Deferred.Or_error.return news_row
-    | Real { connection } -> insert_exn (module Database_schema.News) connection ~row
+    | Real { connection } ->
+      insert_exn (module Database_schema.News) (module News_id) connection ~row
   ;;
 
   let list t =
@@ -736,8 +759,8 @@ module News = struct
   let delete t ~id =
     match t with
     | Mock { news; _ } ->
-      (match List.partition_tf !news ~f:(fun news -> news.id = id) with
-       | [], _ -> Deferred.Or_error.error_s [%message "No such news" (id : int)]
+      (match List.partition_tf !news ~f:(fun news -> News_id.equal news.id id) with
+       | [], _ -> Deferred.Or_error.error_s [%message "No such news" (id : News_id.t)]
        | _ :: _, rest ->
          news := rest;
          Deferred.Or_error.return ())
@@ -746,12 +769,12 @@ module News = struct
         let%map rows =
           Pgx_async.execute
             connection
-            ~params:[ Pgx_async.Value.of_int id ]
+            ~params:[ News_id.to_pgx_async_value id ]
             [%string
               "DELETE FROM %{Database_schema.News.table} WHERE id = $1 RETURNING id"]
         in
         match rows with
-        | [] -> raise_s [%message "No such news" (id : int)]
+        | [] -> raise_s [%message "No such news" (id : News_id.t)]
         | _ :: _ -> ())
   ;;
 end
@@ -783,7 +806,7 @@ module Session = struct
             connection
             ~params:
               [ Pgx_async.Value.of_string (Token.Hash.to_string token_hash)
-              ; Pgx_async.Value.of_int user_id
+              ; User_id.to_pgx_async_value user_id
               ; Database_schema.value_of_time_ns expires_at
               ]
             [%string
@@ -957,12 +980,13 @@ module For_testing = struct
       ; news = ref news
       ; last_id =
           List.concat
-            [ List.map posts ~f:(fun post -> post.id)
-            ; List.map users ~f:(fun user -> user.id)
-            ; List.map images ~f:(fun image -> image.id)
-            ; List.map tags ~f:(fun tag -> tag.id)
-            ; List.map publication ~f:(fun publication -> publication.id)
-            ; List.map news ~f:(fun news -> news.id)
+            [ List.map posts ~f:(fun post -> Post_id.to_int post.id)
+            ; List.map users ~f:(fun user -> User_id.to_int user.id)
+            ; List.map images ~f:(fun image -> Image_id.to_int image.id)
+            ; List.map tags ~f:(fun tag -> Tag_id.to_int tag.id)
+            ; List.map publication ~f:(fun publication ->
+                Publication_id.to_int publication.id)
+            ; List.map news ~f:(fun news -> News_id.to_int news.id)
             ]
           |> List.fold ~init:0 ~f:Int.max
           |> ref

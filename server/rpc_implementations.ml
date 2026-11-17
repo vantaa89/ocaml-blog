@@ -151,7 +151,7 @@ let set_post_hidden db ~query:({ slug; hidden } : Rpcs.Set_post_hidden.Query.t) 
   match%bind.Deferred.Or_error Database.Post.find_by_slug db ~slug with
   | None -> Deferred.Or_error.error_s [%message "No such post" (slug : string)]
   | Some post ->
-    (match [%equal: int option] user_id (Some post.author_id) with
+    (match [%equal: User_id.t option] user_id (Some post.author_id) with
      | false -> Deferred.Or_error.error_s [%message "Not yours to change" (slug : string)]
      | true -> Database.Post.set_hidden db ~id:post.id ~hidden)
 ;;
@@ -162,7 +162,7 @@ let duplicate_slug ?except_id slug ~db =
   | Some existing ->
     (match except_id with
      | None -> true
-     | Some id -> existing.id <> id)
+     | Some id -> not (Post_id.equal existing.id id))
 ;;
 
 let set_tags db ~post_id ~names =
@@ -212,7 +212,7 @@ let update_post db ~query:({ slug; form } : Rpcs.Update_post.Query.t) ~user_id =
     (match%bind Database.Post.find_by_slug db ~slug with
      | None -> return Not_found
      | Some post ->
-       (match post.author_id = user_id with
+       (match User_id.equal post.author_id user_id with
         | false -> return Not_found
         | true ->
           (match%bind duplicate_slug form.slug ~db ~except_id:post.id with
