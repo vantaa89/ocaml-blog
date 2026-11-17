@@ -133,6 +133,12 @@ module Publication : sig
     -> ?include_hidden:bool (* default: [false] *)
     -> unit
     -> Database_schema.Publication.t list Deferred.Or_error.t
+
+  (** Fails if there is no publication with [id]. *)
+  val set_hidden : t -> id:int -> hidden:bool -> unit Deferred.Or_error.t
+
+  (** Fails if there is no publication with [id]. The image stays. *)
+  val delete : t -> id:int -> unit Deferred.Or_error.t
 end
 
 module News : sig

@@ -130,6 +130,11 @@ module Op = struct
         ; link : Test_string.t option
         }
     | List_publications of { include_hidden : bool }
+    | Set_publication_hidden of
+        { publication : Ref.t
+        ; hidden : bool
+        }
+    | Delete_publication of Ref.t
     | Create_session of
         { token : Test_token.t
         ; expiry : Test_expiry.t
@@ -248,6 +253,7 @@ module Side = struct
     ; posts : int Queue.t
     ; tags : int Queue.t
     ; users : int Queue.t
+    ; publications : int Queue.t
     ; news : int Queue.t
       (* Postgres does not guarantee the order between the news of the same date for
          [News.list] queries. Therefore, we make every news item get a distinct date,
@@ -324,6 +330,7 @@ module Side = struct
     ; posts = Queue.create ()
     ; tags = Queue.create ()
     ; users = Queue.of_list [ author.id ]
+    ; publications = Queue.create ()
     ; news = Queue.create ()
     ; author_id = author.id
     ; image_id = image.id
@@ -460,7 +467,7 @@ let run_op (side : Side.t) (op : Op.t) =
          let%map () = Database.News.delete side.db ~id in
          Response.Unit)
     | Create_publication { authors; journal; link } ->
-      let%map (_ : Database_schema.Publication.t) =
+      let%map publication =
         Database.Publication.create
           side.db
           ~title:[%string "publication %{authors}"]
@@ -469,6 +476,7 @@ let run_op (side : Side.t) (op : Op.t) =
           ~journal
           ~link
       in
+      Queue.enqueue side.publications publication.id;
       Response.Unit
     | List_publications { include_hidden } ->
       let%map publications = Database.Publication.list side.db ~include_hidden () in
@@ -484,6 +492,18 @@ let run_op (side : Side.t) (op : Op.t) =
              ; link = publication.link
              ; hidden = publication.hidden
              }))
+    | Set_publication_hidden { publication; hidden } ->
+      (match Side.resolve side.publications publication with
+       | None -> return Response.Skipped
+       | Some id ->
+         let%map () = Database.Publication.set_hidden side.db ~id ~hidden in
+         Response.Unit)
+    | Delete_publication index ->
+      (match Side.resolve side.publications index with
+       | None -> return Response.Skipped
+       | Some id ->
+         let%map () = Database.Publication.delete side.db ~id in
+         Response.Unit)
     | Create_session { token; expiry } ->
       let%map session =
         Database.Session.create

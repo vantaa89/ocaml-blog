@@ -31,6 +31,7 @@ let command =
     ; "user", User_command.command
     ; "news", News_command.command
     ; "image", Image_command.command
+    ; "publication", Publication_command.command
     ; "token", Token_command.command
     ]
 ;;

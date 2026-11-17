@@ -651,6 +651,58 @@ module Publication = struct
         in
         List.map rows ~f:Database_schema.Publication.of_row)
   ;;
+
+  let set_hidden t ~id ~hidden =
+    match t with
+    | Mock { publication; _ } ->
+      (match List.exists !publication ~f:(fun publication -> publication.id = id) with
+       | false -> Deferred.Or_error.error_s [%message "No such publication" (id : int)]
+       | true ->
+         publication
+         := List.map !publication ~f:(fun publication ->
+              match publication.id = id with
+              | true -> { publication with hidden }
+              | false -> publication);
+         Deferred.Or_error.return ())
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let%map rows =
+          Pgx_async.execute
+            connection
+            ~params:[ Pgx_async.Value.of_bool hidden; Pgx_async.Value.of_int id ]
+            [%string
+              "UPDATE %{Database_schema.Publication.table} SET hidden = $1 WHERE id = $2 \
+               RETURNING id"]
+        in
+        match rows with
+        | [] -> raise_s [%message "No such publication" (id : int)]
+        | _ :: _ -> ())
+  ;;
+
+  let delete t ~id =
+    match t with
+    | Mock { publication; _ } ->
+      (match
+         List.partition_tf !publication ~f:(fun publication -> publication.id = id)
+       with
+       | [], _ -> Deferred.Or_error.error_s [%message "No such publication" (id : int)]
+       | _ :: _, rest ->
+         publication := rest;
+         Deferred.Or_error.return ())
+    | Real { connection } ->
+      Deferred.Or_error.try_with (fun () ->
+        let%map rows =
+          Pgx_async.execute
+            connection
+            ~params:[ Pgx_async.Value.of_int id ]
+            [%string
+              "DELETE FROM %{Database_schema.Publication.table} WHERE id = $1 RETURNING \
+               id"]
+        in
+        match rows with
+        | [] -> raise_s [%message "No such publication" (id : int)]
+        | _ :: _ -> ())
+  ;;
 end
 
 module News = struct
