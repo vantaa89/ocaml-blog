@@ -76,7 +76,6 @@ let post_card
      @ List.map tags ~f:tag_node)
 ;;
 
-(* A page that stands in for the content: the mark, a heading, and what follows it *)
 let status_node ?(attrs = []) ~heading children =
   let open Vdom in
   Node.div

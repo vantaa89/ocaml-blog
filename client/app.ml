@@ -81,12 +81,21 @@ let navbar ~search_trigger ~menu_open ~set_menu_open =
     ]
 ;;
 
-let footer ~year ~(current_user : Rpcs.Get_current_user.Response.t) ~log_out =
+let footer
+      ~year
+      ~(route : Route.t)
+      ~(current_user : Rpcs.Get_current_user.Response.t)
+      ~log_out
+  =
   let open Vdom in
   let session_node =
     match current_user with
     | Not_logged_in ->
-      Client_utils.link ~attrs:[ Attr.class_ "nav-link" ] Login [ Node.text "login" ]
+      (match route with
+       | Login ->
+         Node.none (* Does not show the link to the login page if already in the page *)
+       | _ ->
+         Client_utils.link ~attrs:[ Attr.class_ "nav-link" ] Login [ Node.text "login" ])
     | Logged_in { username } ->
       Node.button
         ~attrs:
@@ -141,6 +150,7 @@ let component =
   and set_menu_open = set_menu_open
   and search_modal = search_modal
   and now = now
+  and route = Navigation.current
   and current_user = current_user in
   let year = Time_ns.to_date now ~zone:Client_utils.zone |> Date.year in
   let log_out =
@@ -153,7 +163,7 @@ let component =
     ~attrs:[ Attr.class_ "app-frame" ]
     [ navbar ~search_trigger ~menu_open ~set_menu_open
     ; Node.create "main" ~attrs:[ Attr.class_ "app-main" ] [ view ]
-    ; footer ~year ~current_user ~log_out
+    ; footer ~year ~route ~current_user ~log_out
     ; search_modal
     ]
 ;;

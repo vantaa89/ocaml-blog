@@ -21,17 +21,19 @@ module Action = struct
   [@@deriving sexp_of]
 end
 
-let field ~id ~label ~type_ ~value ~on_input =
-  Vdom.Node.div
-    ~attrs:[ Vdom.Attr.class_ "login-field" ]
-    [ Vdom.Node.label ~attrs:[ Vdom.Attr.for_ id ] [ Vdom.Node.text label ]
-    ; Vdom.Node.input
+let field ~id ~label ~type_ ~autocomplete ~value ~on_input =
+  let open Vdom in
+  Node.div
+    ~attrs:[ Attr.class_ "login-field" ]
+    [ Node.label ~attrs:[ Attr.for_ id ] [ Node.text label ]
+    ; Node.input
         ~attrs:
-          [ Vdom.Attr.type_ type_
-          ; Vdom.Attr.id id
-          ; Vdom.Attr.name id
-          ; Vdom.Attr.value_prop value
-          ; Vdom.Attr.on_input (fun _ value -> on_input value)
+          [ Attr.type_ type_
+          ; Attr.id id
+          ; Attr.name id
+          ; Attr.create "autocomplete" autocomplete
+          ; Attr.value_prop value
+          ; Attr.on_input (fun _ value -> on_input value)
           ]
         ()
     ]
@@ -62,36 +64,38 @@ let component =
     | `Failed (_ : Error.t) -> inject (Failed "Could not log in. Please try again.")
   in
   let view =
-    Vdom.Node.div
-      ~attrs:[ Vdom.Attr.classes [ "custom-container"; "page"; "login" ] ]
-      [ Vdom.Node.h1 [ Vdom.Node.text "Log in" ]
-      ; Vdom.Node.create
+    let open Vdom in
+    Client_utils.status_node
+      ~heading:"Log in"
+      [ Node.create
           "form"
           ~attrs:
-            [ Vdom.Attr.on_submit (fun _ ->
-                Effect.Many [ Effect.Prevent_default; submit ])
+            [ Attr.class_ "login-form"
+            ; Attr.on_submit (fun _ -> Effect.Many [ Effect.Prevent_default; submit ])
             ]
           [ field
               ~id:"username"
               ~label:"Username"
               ~type_:"text"
+              ~autocomplete:"username"
               ~value:model.username
               ~on_input:(fun username -> inject (Set_username username))
           ; field
               ~id:"password"
               ~label:"Password"
               ~type_:"password"
+              ~autocomplete:"current-password"
               ~value:model.password
               ~on_input:(fun password -> inject (Set_password password))
           ; (match model.error with
-             | None -> Vdom.Node.none
+             | None -> Node.none
              | Some error ->
-               Vdom.Node.div
-                 ~attrs:[ Vdom.Attr.class_ "login-error" ]
-                 [ Vdom.Node.text error ])
-          ; Vdom.Node.button
-              ~attrs:[ Vdom.Attr.type_ "submit"; Vdom.Attr.class_ "login-submit" ]
-              [ Vdom.Node.text "Log in" ]
+               Node.div
+                 ~attrs:[ Attr.class_ "login-error"; Attr.create "role" "alert" ]
+                 [ Node.text error ])
+          ; Node.button
+              ~attrs:[ Attr.type_ "submit"; Attr.class_ "login-submit" ]
+              [ Node.text "Log in" ]
           ]
       ]
   in

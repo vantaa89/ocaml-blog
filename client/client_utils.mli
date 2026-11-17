@@ -24,6 +24,13 @@ val tag_node : string -> Vdom.Node.t
 
 val post_card : Rpcs.Post_summary.t -> Vdom.Node.t
 
+(** The layout of pages without content of their own (loading, not found, login) *)
+val status_node
+  :  ?attrs:Vdom.Attr.t list
+  -> heading:string
+  -> Vdom.Node.t list
+  -> Vdom.Node.t
+
 val not_found_node : Vdom.Node.t
 
 (** Renders [f response] once the rpc has succeeded, and a placeholder until then. *)
