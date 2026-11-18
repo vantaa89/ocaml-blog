@@ -9,3 +9,9 @@ val save
   -> date:Date.t
   -> content:string
   -> [ `Saved_as of string | `Too_large | `Unsupported_format ] Deferred.Or_error.t
+
+val delete
+  :  media_dir:string
+  -> date:Date.t
+  -> filename:string
+  -> unit Deferred.Or_error.t

@@ -104,10 +104,13 @@ module Image : sig
     -> id:Image_id.t
     -> Database_schema.Image.t option Deferred.Or_error.t
 
-  (** Each image with how many posts/publications contain its url *)
-  val list_with_reference_counts
-    :  t
-    -> (Database_schema.Image.t * int) list Deferred.Or_error.t
+  val list : t -> Database_schema.Image.t list Deferred.Or_error.t
+
+  (** How many posts/publications contain the image's url *)
+  val reference_count : t -> Database_schema.Image.t -> int Deferred.Or_error.t
+
+  (** Fails if there is no image with [id] or the image is still referenced in any post or publication. *)
+  val delete : t -> id:Image_id.t -> unit Deferred.Or_error.t
 end
 
 module Tag : sig
@@ -134,6 +137,7 @@ module Post_tag : sig
 end
 
 module Publication : sig
+  (** Fails if there is no image with [image_id]. *)
   val create
     :  t
     -> title:string

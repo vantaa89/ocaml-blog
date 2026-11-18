@@ -133,12 +133,15 @@ module Op = struct
         ; as_author : bool
         }
     | Create_image of Test_slug.t
-    | List_images_with_reference_counts
+    | List_images
+    | Image_reference_count of Ref.t
+    | Delete_image of Ref.t
     | Create_news of Test_string.t
     | List_news
     | Delete_news of Ref.t
     | Create_publication of
-        { authors : Test_string.t
+        { image : Ref.t
+        ; authors : Test_string.t
         ; journal : Test_string.t
         ; link : Test_string.t option
         }
@@ -243,7 +246,8 @@ module Response = struct
     | Tag of Observed.Tag.t option
     | Tags of Observed.Tag.t list
     | Tag_counts of (Observed.Tag.t * int) list
-    | Image_counts of (Observed.Image.t * int) list
+    | Images of Observed.Image.t list
+    | Count of int
     | News of Observed.News.t list
     | Publications of Observed.Publication.t list
     | Session of Observed.Session.t option
@@ -265,6 +269,7 @@ module Side = struct
     { db : Database.t
     ; posts : Ids.Post_id.t Queue.t
     ; tags : Ids.Tag_id.t Queue.t
+    ; images : Ids.Image_id.t Queue.t
     ; users : Ids.User_id.t Queue.t
     ; publications : Ids.Publication_id.t Queue.t
     ; news : Ids.News_id.t Queue.t
@@ -272,7 +277,6 @@ module Side = struct
          [News.list] queries. Therefore, we make every news item get a distinct date,
          derived from how many were created so that both sides agree. *)
     ; author_id : Ids.User_id.t
-    ; image_id : Ids.Image_id.t
     ; now : Time_ns.t
     }
 
@@ -343,11 +347,11 @@ module Side = struct
     { db
     ; posts = Queue.create ()
     ; tags = Queue.create ()
+    ; images = Queue.of_list [ image.id ]
     ; users = Queue.of_list [ author.id ]
     ; publications = Queue.create ()
     ; news = Queue.create ()
     ; author_id = author.id
-    ; image_id = image.id
     ; now
     }
   ;;
@@ -452,18 +456,34 @@ let run_op (side : Side.t) (op : Op.t) =
       in
       Posts (List.map posts ~f:(Side.post_ref side))
     | Create_image filename ->
-      let%map (_ : Database_schema.Image.t) =
+      let%map image =
         Database.Image.create
           side.db
           ~filename:(Test_slug.to_string filename)
           ~date:(Date.of_string "2024-01-01")
       in
+      Queue.enqueue side.images image.id;
       Unit
-    | List_images_with_reference_counts ->
-      let%map images = Database.Image.list_with_reference_counts side.db in
-      Image_counts
-        (List.map images ~f:(fun (image, count) : (Observed.Image.t * int) ->
-           { filename = image.filename; date = image.date }, count))
+    | List_images ->
+      let%map images = Database.Image.list side.db in
+      Images
+        (List.map images ~f:(fun image : Observed.Image.t ->
+           { filename = image.filename; date = image.date }))
+    | Image_reference_count index ->
+      (match Side.resolve side.images index with
+       | None -> return Skipped
+       | Some id ->
+         (match%bind Database.Image.find_by_id side.db ~id with
+          | None -> return Skipped
+          | Some image ->
+            let%map count = Database.Image.reference_count side.db image in
+            Count count))
+    | Delete_image index ->
+      (match Side.resolve side.images index with
+       | None -> return Skipped
+       | Some id ->
+         let%map () = Database.Image.delete side.db ~id in
+         Unit)
     | Create_news content ->
       let date = Date.add_days (Date.of_string "2024-01-01") (Queue.length side.news) in
       let%map news = Database.News.create side.db ~content ~date in
@@ -480,18 +500,21 @@ let run_op (side : Side.t) (op : Op.t) =
        | Some id ->
          let%map () = Database.News.delete side.db ~id in
          Unit)
-    | Create_publication { authors; journal; link } ->
-      let%map publication =
-        Database.Publication.create
-          side.db
-          ~title:[%string "publication %{authors}"]
-          ~image_id:side.image_id
-          ~authors
-          ~journal
-          ~link
-      in
-      Queue.enqueue side.publications publication.id;
-      Unit
+    | Create_publication { image; authors; journal; link } ->
+      (match Side.resolve side.images image with
+       | None -> return Skipped
+       | Some image_id ->
+         let%map publication =
+           Database.Publication.create
+             side.db
+             ~title:[%string "publication %{authors}"]
+             ~image_id
+             ~authors
+             ~journal
+             ~link
+         in
+         Queue.enqueue side.publications publication.id;
+         Unit)
     | List_publications { include_hidden } ->
       let%map publications = Database.Publication.list side.db ~include_hidden () in
       Publications

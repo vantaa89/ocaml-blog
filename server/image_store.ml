@@ -35,3 +35,8 @@ let save ~media_dir ~date ~content =
          let%map () = Writer.save (directory ^/ filename) ~contents:content in
          `Saved_as filename))
 ;;
+
+let delete ~media_dir ~date ~filename =
+  Deferred.Or_error.try_with (fun () ->
+    Unix.unlink (media_dir ^/ Date.to_string date ^/ filename))
+;;
