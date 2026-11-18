@@ -27,6 +27,19 @@ module Test_slug = struct
   ;;
 end
 
+module Test_content = struct
+  type t =
+    | Text of Test_string.t
+    | Image of Test_slug.t
+  [@@deriving sexp_of, quickcheck]
+
+  let to_string : t -> string = function
+    | Text text -> text
+    | Image filename ->
+      [%string "![](%{Urls.media_path}/2024-01-01/%{Test_slug.to_string filename})"]
+  ;;
+end
+
 module Test_tag_name = struct
   type t =
     | Ocaml
@@ -88,8 +101,8 @@ module Op = struct
   type t =
     | Create_post of
         { slug : Test_slug.t
-        ; content_en : Test_string.t option
-        ; content_ko : Test_string.t option
+        ; content_en : Test_content.t option
+        ; content_ko : Test_content.t option
         ; special_post : bool
         }
     | Find_post_by_slug of Test_slug.t
@@ -101,8 +114,8 @@ module Op = struct
     | Update_post of
         { post : Ref.t
         ; slug : Test_slug.t
-        ; content_en : Test_string.t option
-        ; content_ko : Test_string.t option
+        ; content_en : Test_content.t option
+        ; content_ko : Test_content.t option
         ; special_post : bool
         }
     | List_posts of { as_author : bool }
@@ -120,7 +133,7 @@ module Op = struct
         ; as_author : bool
         }
     | Create_image of Test_slug.t
-    | List_images
+    | List_images_with_reference_counts
     | Create_news of Test_string.t
     | List_news
     | Delete_news of Ref.t
@@ -230,7 +243,7 @@ module Response = struct
     | Tag of Observed.Tag.t option
     | Tags of Observed.Tag.t list
     | Tag_counts of (Observed.Tag.t * int) list
-    | Images of Observed.Image.t list
+    | Image_counts of (Observed.Image.t * int) list
     | News of Observed.News.t list
     | Publications of Observed.Publication.t list
     | Session of Observed.Session.t option
@@ -358,8 +371,8 @@ let run_op (side : Side.t) (op : Op.t) =
           side.db
           ~title:[%string "post %{slug}"]
           ~slug
-          ~content_en
-          ~content_ko
+          ~content_en:(Option.map content_en ~f:Test_content.to_string)
+          ~content_ko:(Option.map content_ko ~f:Test_content.to_string)
           ~author_id:side.author_id
           ~special_post
           ~now:
@@ -390,8 +403,8 @@ let run_op (side : Side.t) (op : Op.t) =
             ~id
             ~title:[%string "post %{slug}"]
             ~slug
-            ~content_en
-            ~content_ko
+            ~content_en:(Option.map content_en ~f:Test_content.to_string)
+            ~content_ko:(Option.map content_ko ~f:Test_content.to_string)
             ~special_post
         in
         Unit)
@@ -446,11 +459,11 @@ let run_op (side : Side.t) (op : Op.t) =
           ~date:(Date.of_string "2024-01-01")
       in
       Unit
-    | List_images ->
-      let%map images = Database.Image.list side.db in
-      Images
-        (List.map images ~f:(fun image : Observed.Image.t ->
-           { filename = image.filename; date = image.date }))
+    | List_images_with_reference_counts ->
+      let%map images = Database.Image.list_with_reference_counts side.db in
+      Image_counts
+        (List.map images ~f:(fun (image, count) : (Observed.Image.t * int) ->
+           { filename = image.filename; date = image.date }, count))
     | Create_news content ->
       let date = Date.add_days (Date.of_string "2024-01-01") (Queue.length side.news) in
       let%map news = Database.News.create side.db ~content ~date in

@@ -37,17 +37,20 @@ let add_image_command =
 
 let list_images_command =
   Command.async_or_error
-    ~summary:"List every image"
+    ~summary:"List every image with how many posts and publications use it"
     (let%map_open.Command () = return () in
      fun () ->
        Database.with_connection ~f:(fun db ->
-         let%map.Deferred.Or_error images = Database.Image.list db in
-         List.iter images ~f:(fun image ->
+         let%map.Deferred.Or_error images =
+           Database.Image.list_with_reference_counts db
+         in
+         List.iter images ~f:(fun (image, references) ->
            print_s
              [%message
                ""
                  ~id:(image.id : Ids.Image_id.t)
-                 ~url:(Database_schema.Image.url image : string)])))
+                 ~url:(Database_schema.Image.url image : string)
+                 (references : int)])))
 ;;
 
 let command =

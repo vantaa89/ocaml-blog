@@ -104,7 +104,10 @@ module Image : sig
     -> id:Image_id.t
     -> Database_schema.Image.t option Deferred.Or_error.t
 
-  val list : t -> Database_schema.Image.t list Deferred.Or_error.t
+  (** Each image with how many posts/publications contain its url *)
+  val list_with_reference_counts
+    :  t
+    -> (Database_schema.Image.t * int) list Deferred.Or_error.t
 end
 
 module Tag : sig

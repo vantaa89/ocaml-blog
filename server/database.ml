@@ -459,20 +459,63 @@ module Image = struct
         ~param:(Image_id.to_pgx_async_value id)
   ;;
 
-  let list t =
+  let list_with_reference_counts t =
     match t with
-    | Mock { images; _ } ->
+    | Mock { images; posts; publication; _ } ->
       List.sort !images ~compare:(fun a b -> Image_id.compare a.id b.id)
+      |> List.map ~f:(fun image ->
+        let url = Database_schema.Image.url image in
+        let posts =
+          List.count !posts ~f:(fun post ->
+            Database_schema.Post.content_by_language post
+            |> Map.exists ~f:(String.is_substring ~substring:url))
+        in
+        let publications =
+          List.count !publication ~f:(fun publication ->
+            Image_id.equal publication.image_id image.id)
+        in
+        image, posts + publications)
       |> Deferred.Or_error.return
     | Real { connection } ->
       Deferred.Or_error.try_with (fun () ->
         let columns = String.concat ~sep:", " Database_schema.Image.columns in
-        let%map rows =
+        let%bind rows =
           Pgx_async.execute
             connection
             [%string "SELECT %{columns} FROM %{Database_schema.Image.table} ORDER BY id"]
         in
-        List.map rows ~f:Database_schema.Image.of_row)
+        let count ~param sql =
+          let%map rows = Pgx_async.execute connection ~params:[ param ] sql in
+          match rows with
+          | [ [ count ] ] -> Pgx_async.Value.to_int_exn count
+          | _ ->
+            raise_s
+              [%message
+                "Unexpected result from count" (rows : Pgx_async.Value.t list list)]
+        in
+        Deferred.List.map
+          (List.map rows ~f:Database_schema.Image.of_row)
+          ~how:`Sequential
+          ~f:(fun image ->
+            let%bind posts =
+              count
+                ~param:(Pgx_async.Value.of_string (Database_schema.Image.url image))
+                [%string
+                  {sql|
+                SELECT COUNT(*) FROM %{Database_schema.Post.table}
+                WHERE strpos(content_en, $1) > 0 OR strpos(content_ko, $1) > 0
+                |sql}]
+            in
+            let%map publications =
+              count
+                ~param:(Image_id.to_pgx_async_value image.id)
+                [%string
+                  {sql|
+                SELECT COUNT(*) FROM %{Database_schema.Publication.table}
+                WHERE image_id = $1
+                |sql}]
+            in
+            image, posts + publications))
   ;;
 end
 
